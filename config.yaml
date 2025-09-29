@@ -1,0 +1,45 @@
+data:
+  train_root: ./data/train
+  val_root: ./data/val
+  img_size: [544, 800]        # H, W — keep exact aspect; no resizing distortion
+
+model:
+  z_min: 5.0                  # safer near bound
+  z_max: 300.0
+  rot_repr: 6d
+
+optim:
+  lr: 1.0e-4
+  weight_decay: 1.0e-4
+  batch_size: 8
+  epochs: 30
+
+loss:
+  lambda_sil: 5.0
+  lambda_photo: 0.0
+
+render:
+  soft_sigma: 1.0             # start here; tune 0.5–2.0
+  cull_backfaces: true        # match PyVista mask edge behavior
+  constant_rgb: [0.75, 0.75, 0.75]
+
+camera:
+  fx: 1494.3                  # from vFOV≈30°, H=544, W=800
+  fy: 1015.1
+  cx: 399.5
+  cy: 271.5
+
+
+# ====== TRAIN / LOGGING ======
+train_io:
+  out_dir: ./outputs
+  log_interval: 50
+  val_interval_epochs: 1
+  save_val_overlays: true
+
+# ====== WANDB ======
+wandb:
+  enabled: true
+  project: clip_pose
+  entity: respinosa
+  run_name: clip_pose_run
