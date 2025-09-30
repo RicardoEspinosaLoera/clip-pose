@@ -315,7 +315,7 @@ def main(cfg_path='config.yaml'):
 
     # ---- mesh & renderer ----
     SCALE = cfg.get('mesh', {}).get('scale', 2.0)
-    verts, faces = load_mesh('./meshes/item.obj', scale=SCALE)
+    verts, faces = load_mesh('./meshes/Item.obj', scale=SCALE)
     faces = faces.long()
     verts, faces = verts.to(device), faces.to(device)
     renderer = SoftMeshRenderer(verts, faces).to(device)
