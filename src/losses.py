@@ -115,7 +115,7 @@ def _sobel_grad(x):
 
 def pose_loss2(
     R_pred, t_pred, R_gt, t_gt, D_obj,
-    M, K, image_size, renderer,
+    M, K, image_size, renderer, BG
     λR=0.5, λt=0.5,
     λmask=1.0, λbce=1.0, λdice=0.5, λedge=0.1,
     mask_downsample=1
@@ -148,6 +148,7 @@ def pose_loss2(
         if mask_downsample > 1:
             Hs, Ws = H // mask_downsample, W // mask_downsample
             M_use = F.interpolate(M, size=(Hs, Ws), mode='bilinear', align_corners=False).clamp(0,1)
+            BG = F.interpolate(BG, size=(Hs, Ws), mode='bilinear', align_corners=False).clamp(0,1)
             rgb_hat, sil_hat = renderer(R_pred, t_pred, K, image_size=(Hs, Ws))
         else:
             M_use = M
@@ -182,7 +183,18 @@ def pose_loss2(
     # --- total ---
     loss = λR*L_R + λt*L_T + λmask*L_mask
 
-    
+    B, _, H, W = sil_hat.shape
+    img = torch.zeros(B, 3, H, W, device=sil.device)  # black background
+    overlay = overlay_mask_on_image(
+        img, sil_hat,
+        color=(1,1,1),   # white fill
+        alpha=1.0,       # opaque
+        hard=True,       # crisp edges like your sample
+        thr=0.5
+    )
+
+    I_comp = composite(rgb_hat, BG, sil_hat)
+
 
     logs = {
         'rot_rad': L_R.detach(),
@@ -193,4 +205,4 @@ def pose_loss2(
         'mask_iou': (1. - iou_val).detach(),  # IoU (not loss): higher is better
         'sil_mean': (M.float().mean().detach())
     }
-    return loss, logs, sil_hat, rgb_hat
+    return loss, logs, I_comp
