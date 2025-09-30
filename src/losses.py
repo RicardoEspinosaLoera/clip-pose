@@ -39,45 +39,78 @@ def sample_mesh_points(verts, faces, n=1500):
     pts = f0 + u * (f1 - f0) + v * (f2 - f0)  # (n,3)
     return pts
 
+def _ensure_nchw(x):
+    if x.ndim == 2:                    # H,W
+        x = x[None, None, ...]
+    elif x.ndim == 3:
+        if x.shape[0] in (1,3):        # C,H,W
+            x = x[None, ...]
+        elif x.shape[-1] in (1,3):     # H,W,C
+            x = x.permute(2,0,1).unsqueeze(0)
+        else:
+            raise ValueError(f"Unknown 3D shape {x.shape}")
+    elif x.ndim == 4 and x.shape[-1] in (1,3):  # B,H,W,C
+        x = x.permute(0,3,1,2)
+    if x.ndim != 4:
+        raise ValueError(f"Expected NCHW, got {x.shape}")
+    return x
+
 @torch.no_grad()
-def overlay_mask_on_image(
-    img,        # (B,3,H,W) float in [0,1]   (your picture)
-    sil,        # (B,1,H,W) float in [0,1]   (Kaolin silhouette)
-    color=(1.0, 1.0, 1.0),  # overlay color for the mask (e.g., white)
-    alpha=0.9,              # fill opacity (0..1) for inside the mask
-    hard=False,             # True => hard threshold, False => soft edges
-    outline_px=0,           # >0 to draw outline only (px width). 0 disables outline.
-    thr=0.5                 # threshold if hard=True
-):
+def composite(rgb, bg, sil):
     """
-    Returns: (B,3,H,W) float in [0,1] with the mask drawn on top of img.
+    rgb: rendered clip (B,3,Hr,Wr) in [0,1]
+    bg:  your real image (B,3,H,W) in [0,1]
+    sil: silhouette alpha (B,1,*,*) in [0,1] or {0,255}
+    returns: (B,3,H,W)
     """
-    #assert img.dim()==4 and sil.dim()==4 and img.size(-2:)==sil.size(-2:)
+    rgb = _ensure_nchw(rgb).float().clamp(0,1)
+    bg  = _ensure_nchw(bg).float().clamp(0,1)
+    sil = _ensure_nchw(sil).float()
+    if sil.shape[1] != 1:   # keep 1-channel alpha
+        sil = sil[:, :1, ...]
+    if sil.max() > 1.5:     # 0/255 → 0/1
+        sil = sil / 255.0
+
+    H, W = bg.shape[-2:]
+    if rgb.shape[-2:] != (H, W):
+        rgb = F.interpolate(rgb, size=(H, W), mode='bilinear', align_corners=False)
+    if sil.shape[-2:] != (H, W):
+        sil = F.interpolate(sil, size=(H, W), mode='bilinear', align_corners=False).clamp(0,1)
+
+    # stats (debug)
+    smin, sme, smax = sil.min().item(), sil.mean().item(), sil.max().item()
+    r_in  = rgb[sil.expand_as(rgb) > 0.5].mean().item() if (sil > 0.5).any() else float('nan')
+    print(f"[composite] sil min/mean/max: {smin:.4f}/{sme:.4f}/{smax:.4f} | rgb_mean_inside: {r_in:.4f}")
+
+    return sil * rgb + (1.0 - sil) * bg
+
+@torch.no_grad()
+def overlay_mask_on_image(img, sil, color=(1,1,1), alpha=0.9, hard=False, outline_px=0, thr=0.5):
+    img = _ensure_nchw(img).float().clamp(0,1)
+    sil = _ensure_nchw(sil).float()
+    if sil.shape[1] != 1: sil = sil[:, :1, ...]
+    if sil.max() > 1.5: sil = sil/255.0
+    H, W = img.shape[-2:]
+    if sil.shape[-2:] != (H, W):
+        sil = F.interpolate(sil, size=(H, W), mode='bilinear', align_corners=False).clamp(0,1)
 
     if hard:
-        m = (sil > thr).float()           # hard binary
+        m = (sil > thr).float()
     else:
-        m = sil.clamp(0, 1)               # soft alpha
+        m = sil.clamp(0,1)
 
-    B, _, H, W = img.shape
+    B = img.size(0)
     color_t = torch.tensor(color, dtype=img.dtype, device=img.device).view(1,3,1,1).expand(B,-1,H,W)
 
     if outline_px > 0:
-        # 1-px outline: dilate - erode (morphological edge)
         k = outline_px
         dil = F.max_pool2d(m, kernel_size=2*k+1, stride=1, padding=k)
         ero = -F.max_pool2d(-m, kernel_size=2*k+1, stride=1, padding=k)
-        edge = (dil - ero).clamp(0,1)
-        edge = (edge > 0.01).float()      # make it crisp
-
-        # Draw outline with full opacity, keep image elsewhere
+        edge = (dil - ero > 1e-3).float()
         return torch.where(edge>0, color_t, img)
 
-    # Filled overlay (soft or hard)
-    # alpha_map = alpha * m  (broadcast to 3 channels)
-    a = (alpha * m).expand(-1, 3, -1, -1)
-    out = img * (1.0 - a) + color_t * a
-    return out
+    a = (alpha * m).expand(-1,3,-1,-1)
+    return img * (1.0 - a) + color_t * a
 
 def add_loss(Rp, tp, Rg, tg, P_obj, symmetric=False):
     """ADD (or ADD-S if symmetric=True); returns mean over batch (in mesh units)."""
