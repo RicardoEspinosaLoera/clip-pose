@@ -229,7 +229,7 @@ def run_epoch(model, renderer, loader, device, cfg, P_obj, D_obj, verts, mode,
 
         I_comp = composite(rgb, BG, sil)
         
-        loss, logs = pose_loss2(R_pred, t_pred, R_gt, t_gt, D_obj, M, K, image_size=(H, W), renderer, λR=0.5, λt=0.5, λmask=1.0, λbce=1.0, λdice=0.5, λedge=0.1, mask_downsample=1)
+        loss, logs = pose_loss2(R_pred, t_pred, R_gt, t_gt, D_obj, M, K, (H, W), renderer, λR=0.5, λt=0.5, λmask=1.0, λbce=1.0, λdice=0.5, λedge=0.1, mask_downsample=1)
 
         if is_train:
             optimizer.zero_grad(set_to_none=True)
