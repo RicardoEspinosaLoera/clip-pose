@@ -201,35 +201,35 @@ def run_epoch(model, renderer, loader, device, cfg, P_obj, D_obj, verts, mode,
         H, W = I.shape[-2], I.shape[-1]
 
         #Rendering
-        with torch.no_grad():
-            t_pred_render = t_pred.clone()
-            t_pred_render[:, 2] = torch.nn.functional.softplus(t_pred_render[:, 2]) + 1e-2  
+        #with torch.no_grad():
+        t_pred_render = t_pred.clone()
+        t_pred_render[:, 2] = torch.nn.functional.softplus(t_pred_render[:, 2]) + 1e-2  
 
-            # Compute an anchor t that guarantees the mesh is in-FOV for this R,K
-            t_anchor = fit_batch(renderer, R_pred.detach(), K, H, W, fill=fill)             
+        # Compute an anchor t that guarantees the mesh is in-FOV for this R,K
+        t_anchor = fit_batch(renderer, R_pred.detach(), K, H, W, fill=fill)             
 
-            # Blend: early = mostly anchor (visible), later = network prediction
-            alpha = ramp_alpha(step, warmup=warmup, ramp=ramp)                               
-            t_fixed = (1.0 - alpha) * t_anchor + alpha * t_pred_render                       
+        # Blend: early = mostly anchor (visible), later = network prediction
+        alpha = ramp_alpha(step, warmup=warmup, ramp=ramp)                               
+        t_fixed = (1.0 - alpha) * t_anchor + alpha * t_pred_render                       
 
-            #diagnose_visibility(renderer, R_pred, t_fixed, K, H, W)
+        #diagnose_visibility(renderer, R_pred, t_fixed, K, H, W)
 
+    
+        rgb, sil = renderer(R_pred, t_fixed, K, image_size=(H, W))
+        B, _, H, W = sil.shape
+        img = torch.zeros(B, 3, H, W, device=sil.device)  # black background
+
+        overlay = overlay_mask_on_image(
+            img, sil,
+            color=(1,1,1),   # white fill
+            alpha=1.0,       # opaque
+            hard=True,       # crisp edges like your sample
+            thr=0.5
+        )
+
+        I_comp = composite(rgb, BG, sil)
         
-            rgb, sil = renderer(R_pred, t_fixed, K, image_size=(H, W))
-            B, _, H, W = sil.shape
-            img = torch.zeros(B, 3, H, W, device=sil.device)  # black background
-
-            overlay = overlay_mask_on_image(
-                img, sil,
-                color=(1,1,1),   # white fill
-                alpha=1.0,       # opaque
-                hard=True,       # crisp edges like your sample
-                thr=0.5
-            )
-
-            I_comp = composite(rgb, BG, sil)
-        
-        loss, logs = pose_loss(R_pred, t_pred, R_gt, t_gt, D_obj, λR=λR, λt=λt)
+        loss, logs = pose_loss2(R_pred, t_pred, R_gt, t_gt, D_obj, M, K, image_size, renderer, λR=0.5, λt=0.5, λmask=1.0, λbce=1.0, λdice=0.5, λedge=0.1, mask_downsample=1)
 
         if is_train:
             optimizer.zero_grad(set_to_none=True)

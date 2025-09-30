@@ -88,3 +88,107 @@ def pose_loss(R_pred, t_pred, R_gt, t_gt, D_obj, λR=0.5, λt=0.5):
     logs = {'rot_rad': L_R.detach(), 'trans_n': L_T.detach()}
     return loss, logs
 
+def _dice_loss(p, g, eps=1e-6):
+    # p,g: (B,1,H,W) in [0,1]
+    inter = (p * g).sum(dim=(1,2,3))
+    denom = (p + g).sum(dim=(1,2,3))
+    dice = 1. - (2*inter + eps) / (denom + eps)
+    return dice.mean()
+
+def _iou_loss(p, g, eps=1e-6):
+    inter = (p * g).sum(dim=(1,2,3))
+    union = (p + g - p*g).sum(dim=(1,2,3))
+    iou = 1. - (inter + eps) / (union + eps)
+    return iou.mean()
+
+def _sobel_grad(x):
+    # x: (B,1,H,W)
+    kx = torch.tensor([[-1.,0.,1.],
+                       [-2.,0.,2.],
+                       [-1.,0.,1.]], device=x.device, dtype=x.dtype).view(1,1,3,3)
+    ky = torch.tensor([[-1.,-2.,-1.],
+                       [ 0., 0., 0.],
+                       [ 1., 2., 1.]], device=x.device, dtype=x.dtype).view(1,1,3,3)
+    gx = F.conv2d(x, kx, padding=1)
+    gy = F.conv2d(x, ky, padding=1)
+    return torch.sqrt(gx*gx + gy*gy + 1e-8)
+
+def pose_loss2(
+    R_pred, t_pred, R_gt, t_gt, D_obj,
+    M, K, image_size, renderer,
+    λR=0.5, λt=0.5,
+    λmask=1.0, λbce=1.0, λdice=0.5, λedge=0.1,
+    mask_downsample=1
+):
+    """
+    R_pred,t_pred: (B,3,3), (B,3)
+    R_gt,t_gt:     (B,3,3), (B,3)
+    D_obj:         normalization scalar(s) for your transl. loss
+    M:             GT mask (B,1,H,W) in {0,1}
+    K:             intrinsics (B,3,3)
+    image_size:    (H,W)
+    renderer:      callable -> (rgb_pred, sil_pred) with sil in [0,1]
+    λ*:            weights; set λmask=0 to disable silhouette loss
+    mask_downsample: integer factor to downscale mask & render for speed
+    """
+    # --- base pose terms (your existing) ---
+    L_R = rot_geodesic_loss(R_pred, R_gt)
+    L_T = normalized_t_loss(t_pred, t_gt, D_obj)
+
+    # --- silhouette term ---
+    L_mask = torch.tensor(0., device=R_pred.device, dtype=L_R.dtype)
+    bce_val = torch.tensor(0., device=R_pred.device, dtype=L_R.dtype)
+    dice_val = torch.tensor(0., device=R_pred.device, dtype=L_R.dtype)
+    edge_val = torch.tensor(0., device=R_pred.device, dtype=L_R.dtype)
+    iou_val = torch.tensor(0., device=R_pred.device, dtype=L_R.dtype)
+
+    if λmask > 0.0:
+        # Render at (possibly) lower resolution for speed
+        H, W = image_size
+        if mask_downsample > 1:
+            Hs, Ws = H // mask_downsample, W // mask_downsample
+            M_use = F.interpolate(M, size=(Hs, Ws), mode='bilinear', align_corners=False).clamp(0,1)
+            rgb_hat, sil_hat = renderer(R_pred, t_pred, K, image_size=(Hs, Ws))
+        else:
+            M_use = M
+            rgb_hat, sil_hat = renderer(R_pred, t_pred, K, image_size=(H, W))
+
+        # Ensure shape (B,1,H,W) & range [0,1]
+        if sil_hat.ndim == 3:  # (B,H,W)
+            sil_hat = sil_hat.unsqueeze(1)
+        sil_hat = sil_hat.clamp(0, 1)
+
+        # Compute mask only when GT has any foreground (avoids degenerate grads)
+        has_fg = (M_use.sum(dim=(1,2,3)) > 10).float().view(-1,1,1,1)
+        sil_eff = sil_hat * has_fg
+        M_eff   = M_use   * has_fg
+
+        # BCE + Dice; optional IoU for logging; edge with Sobel
+        if (has_fg.sum() > 0):
+            bce_val  = F.binary_cross_entropy(sil_eff, M_eff)
+            dice_val = _dice_loss(sil_eff, M_eff)
+            iou_val  = _iou_loss(sil_eff, M_eff)  # for logs (not added unless you prefer IoU to Dice)
+
+            if λedge > 0.0:
+                gp = _sobel_grad(sil_eff)
+                gg = _sobel_grad(M_eff)
+                edge_val = F.l1_loss(gp, gg)
+
+            L_mask = λbce*bce_val + λdice*dice_val + λedge*edge_val
+        else:
+            # No foreground in batch; keep L_mask=0
+            pass
+
+    # --- total ---
+    loss = λR*L_R + λt*L_T + λmask*L_mask
+
+    logs = {
+        'rot_rad': L_R.detach(),
+        'trans_n': L_T.detach(),
+        'mask_bce': bce_val.detach(),
+        'mask_dice': dice_val.detach(),
+        'mask_edge': edge_val.detach(),
+        'mask_iou': (1. - iou_val).detach(),  # IoU (not loss): higher is better
+        'sil_mean': (M.float().mean().detach())
+    }
+    return loss, logs
