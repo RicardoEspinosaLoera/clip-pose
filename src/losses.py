@@ -182,6 +182,8 @@ def pose_loss2(
     # --- total ---
     loss = λR*L_R + λt*L_T + λmask*L_mask
 
+    
+
     logs = {
         'rot_rad': L_R.detach(),
         'trans_n': L_T.detach(),
@@ -191,4 +193,4 @@ def pose_loss2(
         'mask_iou': (1. - iou_val).detach(),  # IoU (not loss): higher is better
         'sil_mean': (M.float().mean().detach())
     }
-    return loss, logs
+    return loss, logs, sil
