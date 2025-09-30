@@ -184,7 +184,7 @@ def pose_loss2(
     loss = λR*L_R + λt*L_T + λmask*L_mask
 
     B, _, H, W = sil_hat.shape
-    img = torch.zeros(B, 3, H, W, device=sil.device)  # black background
+    img = torch.zeros(B, 3, H, W, device=sil_hat.device)  # black background
     overlay = overlay_mask_on_image(
         img, sil_hat,
         color=(1,1,1),   # white fill
