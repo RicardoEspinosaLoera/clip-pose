@@ -245,4 +245,4 @@ def pose_loss2(
         'mask_iou': (1. - iou_val).detach(),  # IoU (not loss): higher is better
         'sil_mean': (M.float().mean().detach())
     }
-    return loss, logs, I_comp
+    return loss, logs, I_comp, overlay
