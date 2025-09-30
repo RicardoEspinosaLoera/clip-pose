@@ -6,7 +6,7 @@ from src.models import Regressor
 from src.camera import sixd_to_rotmat
 from src.renderer import SoftMeshRenderer
 from src.losses import (
-    composite, robust_l1, sample_mesh_points, total_loss,pose_loss
+    composite, robust_l1, sample_mesh_points, total_loss,pose_loss,pose_loss2
 )
 import wandb
 import torchvision.transforms as T
