@@ -24,8 +24,8 @@ def save_or_log_overlay(I, I_comp, sil, M, out_dir, tag, step, to_wandb=False):
     #print("I_sil "+str(sil[0].shape))
     #print("I_M "+str(M[0].shape))
 
-    I_comp = F.interpolate(I_comp, size=I[0].shape, mode='bilinear', align_corners=False).clamp(0,1)
-    I_sil = F.interpolate(I_comp, size=I[0].shape, mode='bilinear', align_corners=False).clamp(0,1)
+    I_comp = F.interpolate(I_comp, size=I.shape, mode='bilinear', align_corners=False).clamp(0,1)
+    I_sil = F.interpolate(I_comp, size=I.shape, mode='bilinear', align_corners=False).clamp(0,1)
 
     grid = vutils.make_grid([
         I[0].detach().cpu(),
