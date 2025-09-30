@@ -17,6 +17,12 @@ import math
 def save_or_log_overlay(I, I_comp, sil, M, out_dir, tag, step, to_wandb=False):
     os.makedirs(out_dir, exist_ok=True)
     # I, I_comp: (B,3,H,W); sil, M: (B,1,H,W)
+
+    print("I "+I[0].shape)
+    print("I_comp "+I_comp[0].shape)
+    print("I_sil "+sil[0].shape)
+    print("I_M "+M[0].shape)
+
     grid = vutils.make_grid([
         I[0].detach().cpu(),
         I_comp[0].detach().cpu(),
