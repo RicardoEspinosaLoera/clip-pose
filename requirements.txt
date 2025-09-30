@@ -1,6 +1,6 @@
-torch>=2.2
-torchvision>=0.17
-kaolin>=0.15.0
+torch==1.12.1+cu113
+torchvision==0.13.1+cu113
+kaolin==0.10.0
 numpy
 imageio
 opencv-python
