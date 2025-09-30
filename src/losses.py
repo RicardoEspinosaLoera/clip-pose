@@ -39,6 +39,46 @@ def sample_mesh_points(verts, faces, n=1500):
     pts = f0 + u * (f1 - f0) + v * (f2 - f0)  # (n,3)
     return pts
 
+@torch.no_grad()
+def overlay_mask_on_image(
+    img,        # (B,3,H,W) float in [0,1]   (your picture)
+    sil,        # (B,1,H,W) float in [0,1]   (Kaolin silhouette)
+    color=(1.0, 1.0, 1.0),  # overlay color for the mask (e.g., white)
+    alpha=0.9,              # fill opacity (0..1) for inside the mask
+    hard=False,             # True => hard threshold, False => soft edges
+    outline_px=0,           # >0 to draw outline only (px width). 0 disables outline.
+    thr=0.5                 # threshold if hard=True
+):
+    """
+    Returns: (B,3,H,W) float in [0,1] with the mask drawn on top of img.
+    """
+    #assert img.dim()==4 and sil.dim()==4 and img.size(-2:)==sil.size(-2:)
+
+    if hard:
+        m = (sil > thr).float()           # hard binary
+    else:
+        m = sil.clamp(0, 1)               # soft alpha
+
+    B, _, H, W = img.shape
+    color_t = torch.tensor(color, dtype=img.dtype, device=img.device).view(1,3,1,1).expand(B,-1,H,W)
+
+    if outline_px > 0:
+        # 1-px outline: dilate - erode (morphological edge)
+        k = outline_px
+        dil = F.max_pool2d(m, kernel_size=2*k+1, stride=1, padding=k)
+        ero = -F.max_pool2d(-m, kernel_size=2*k+1, stride=1, padding=k)
+        edge = (dil - ero).clamp(0,1)
+        edge = (edge > 0.01).float()      # make it crisp
+
+        # Draw outline with full opacity, keep image elsewhere
+        return torch.where(edge>0, color_t, img)
+
+    # Filled overlay (soft or hard)
+    # alpha_map = alpha * m  (broadcast to 3 channels)
+    a = (alpha * m).expand(-1, 3, -1, -1)
+    out = img * (1.0 - a) + color_t * a
+    return out
+
 def add_loss(Rp, tp, Rg, tg, P_obj, symmetric=False):
     """ADD (or ADD-S if symmetric=True); returns mean over batch (in mesh units)."""
     Pp = transform_pts(Rp, tp, P_obj)  # (B,N,3)
