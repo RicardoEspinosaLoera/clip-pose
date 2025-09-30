@@ -115,7 +115,7 @@ def _sobel_grad(x):
 
 def pose_loss2(
     R_pred, t_pred, R_gt, t_gt, D_obj,
-    M, K, image_size, renderer, BG
+    M, K, image_size, renderer, BG,
     λR=0.5, λt=0.5,
     λmask=1.0, λbce=1.0, λdice=0.5, λedge=0.1,
     mask_downsample=1
