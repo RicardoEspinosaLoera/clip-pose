@@ -24,13 +24,13 @@ def save_or_log_overlay(I, I_comp, sil, M, out_dir, tag, step, to_wandb=False):
     #print("I_sil "+str(sil[0].shape))
     #print("I_M "+str(M[0].shape))
 
-    I_comp = F.interpolate(I_comp, size=I.shape, mode='bilinear', align_corners=False).clamp(0,1)
-    I_sil = F.interpolate(I_comp, size=I.shape, mode='bilinear', align_corners=False).clamp(0,1)
+    I_comp_r = F.interpolate(I_comp, size=I.shape, mode='bilinear', align_corners=False).clamp(0,1)
+    I_sil_r = F.interpolate(I_comp, size=I.shape, mode='bilinear', align_corners=False).clamp(0,1)
 
     grid = vutils.make_grid([
         I[0].detach().cpu(),
-        I_comp[0].detach().cpu(),
-        sil[0].detach().cpu(),
+        I_comp_r[0].detach().cpu(),
+        I_sil_r[0].detach().cpu(),
         M[0].detach().cpu().repeat(3,1,1)
     ], nrow=4, normalize=True, scale_each=True)
     #path = os.path.join(out_dir, f"{tag}_{step:06d}.png")
