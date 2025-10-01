@@ -316,7 +316,7 @@ def pose_loss2(
     M, K, image_size, renderer, BG,
     λR=0.5, λt=0.5,
     λmask=1.0, λbce=1.0, λdice=0.5, λedge=0.0,  # set λedge=0 for speed
-    mask_downsample=2,z_min=1e-2, z_max=None,
+    mask_downsample=1,z_min=1e-2, z_max=None,
     make_vis=True                              # turn off visuals to speed up
 ):
     # base pose losses (your originals)
