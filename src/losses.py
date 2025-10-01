@@ -372,6 +372,12 @@ def fit_batch_in_fov(renderer, R, K, H, W, fill=0.9):
     t_list = [fit_mesh_in_fov(renderer.verts, R[b], K[b], H, W, fill) for b in range(R.shape[0])]
     return torch.stack(t_list, 0)  # (B,3)
 
+def cam2obj_to_world2cam(R_co, t_co):
+    # R_co : camera -> object; t_co : camera origin in object coords
+    R_oc = R_co.transpose(-1, -2)                     # inverse
+    t_oc = -(R_oc @ t_co.unsqueeze(-1)).squeeze(-1)   # inverse
+    return R_oc, t_oc
+
 def pose_loss2(
     R_pred, t_pred, R_gt, t_gt, D_obj,
     M, K, image_size, renderer, BG,
@@ -409,8 +415,11 @@ def pose_loss2(
     # Blend: alpha=0 => all anchor (guaranteed visible), alpha=1 => all t_pred_render
     t_render = (1.0 - anchor_alpha) * t_anchor + anchor_alpha * t_pred_render
 
+    R_pred_w2c, t_pred_w2c = cam2obj_to_world2cam(R_pred, t_pred)
+    R_gt_w2c,  t_gt_w2c    = cam2obj_to_world2cam(R_gt,  t_gt)
+    rgb, sil_hat = renderer(R_pred_w2c, t_render, K_use, image_size=(Hs,Ws))
     # ---- differentiable render (Kaolin DIB-R) ----
-    rgb_hat, sil_hat = renderer(R_pred, t_render, K_use, image_size=(Hs, Ws))
+    #rgb_hat, sil_hat = renderer(R_pred, t_render, K_use, image_size=(Hs, Ws))
     sil_hat = sil_hat.float().clamp(0,1)  # (B,1,Hs,Ws)
 
     # ---- silhouette loss (optional) ----
