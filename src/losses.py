@@ -312,9 +312,6 @@ def normalized_t_loss(t_pred, t_gt, D_obj, eps=1e-8):
     return (torch.linalg.norm(t_pred - t_gt, dim=1) / (D_obj + eps)).mean()
 
 
-import torch
-import torch.nn.functional as F
-
 # --- helper 0: (optional) rescale intrinsics if you render at a different size ---
 def rescale_K(K, old_H, old_W, new_H, new_W):
     if (new_H == old_H) and (new_W == old_W):
@@ -407,16 +404,16 @@ def pose_loss2(
     #t_pred_render = t_pred.clone()
     #t_pred_render[:, 2] = F.softplus(t_pred_render[:, 2]) + 1e-2
 
-    t_pred_render = t_pred.clone()
-    tz = F.softplus(t_pred_render[:, 2:3]) + 1e-2      # (B,1)
-    t_pred_render = torch.cat([t_pred_render[:, :2], tz], dim=1)
+    #t_pred_render = t_pred.clone()
+    #tz = F.softplus(t_pred_render[:, 2:3]) + 1e-2      # (B,1)
+    #t_pred_render = torch.cat([t_pred_render[:, :2], tz], dim=1)
 
-    R_pred = project_to_so3(R_pred)
+    """R_pred = project_to_so3(R_pred)
     t_anchor = fit_batch_in_fov(renderer, R_pred.detach(), K_use, Hs, Ws, fill=anchor_fill)
     # Blend: alpha=0 => all anchor (guaranteed visible), alpha=1 => all t_pred_render
-    t_render = (1.0 - anchor_alpha) * t_anchor + anchor_alpha * t_pred_render
+    t_render = (1.0 - anchor_alpha) * t_anchor + anchor_alpha * t_pred_render"""
 
-    R_pred_w2c, t_pred_w2c = cam2obj_to_world2cam(R_pred, t_render)
+    R_pred_w2c, t_pred_w2c = cam2obj_to_world2cam(R_pred, t_pred)
     #R_gt_w2c,  t_gt_w2c    = cam2obj_to_world2cam(R_gt,  t_gt)
     rgb_hat, sil_hat = renderer(R_pred_w2c, t_pred_w2c, K_use, image_size=(Hs, Ws))  # ✅
 
