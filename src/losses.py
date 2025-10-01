@@ -1,5 +1,6 @@
 import torch
 import torch.nn.functional as F
+from math import pi
 
 # -------- basic image losses --------
 def robust_l1(x, y, eps=1e-3):
@@ -284,6 +285,94 @@ def probe_units_scale(renderer, R_gt, t_gt, K, M, image_size, flip_v=False, half
     print(f"[units] BEST scale s={best[1]}  IoU={best[0]:.3f}")
     return best[1] or 1.0
 
+import torch, torch.nn.functional as F
+from math import pi
+
+_DELTA = None  # {'R':(3,3), 't':(3,), 's':float}
+
+def _rodrigues(r):
+    # r: (...,3)
+    theta = torch.clamp(torch.linalg.norm(r, dim=-1, keepdim=True), min=1e-8)
+    k = r / theta
+    K = torch.zeros(r.shape[:-1]+(3,3), device=r.device, dtype=r.dtype)
+    K[...,0,1] = -k[...,2]; K[...,0,2] =  k[...,1]
+    K[...,1,0] =  k[...,2]; K[...,1,2] = -k[...,0]
+    K[...,2,0] = -k[...,1]; K[...,2,1] =  k[...,0]
+    I = torch.eye(3, device=r.device, dtype=r.dtype).expand_as(K)
+    return I + torch.sin(theta)[...,None]*K + (1-torch.cos(theta))[...,None]*(K@K)
+
+@torch.no_grad()
+def _resize_to(img, size):
+    x = img
+    if x.shape[-2:] != size:
+        x = F.interpolate(x, size=size, mode='bilinear', align_corners=False).clamp(0,1)
+    return x
+
+def _compose_with_delta(R, t, RΔ, tΔ, s):
+    # R,t: (B,3,3),(B,3), RΔ:(3,3), tΔ:(3,), s: scalar
+    B = R.size(0)
+    RΔB = RΔ.unsqueeze(0).expand(B,3,3)
+    tΔB = tΔ.unsqueeze(0).expand(B,3)
+    Rr  = torch.einsum('bij,bjk->bik', R, RΔB)
+    tr  = s*t + torch.einsum('bij,bj->bi', R, s*tΔB)
+    return Rr, tr
+
+def calibrate_delta(renderer, R_gt, t_gt, K, M, image_size, flip_v=False, halfpx=-0.5, 
+                    steps=300, lr=5e-2, use_scale=True, max_rot_deg=30):
+    """
+    Optimize Δ = (RΔ, tΔ, s) to maximize IoU on GT masks across a small batch.
+    """
+    device = R_gt.device
+    B = R_gt.size(0)
+    H, W = image_size
+    K_r = K.clone(); K_r[:,0,2] += halfpx; K_r[:,1,2] += halfpx
+    M = _ensure_nchw(M.float()); M = M/255.0 if M.max()>1.5 else M
+    M = _resize_to(M, (H, W))
+
+    # Params: small rotation, translation in object frame, log-scale
+    rvec = torch.zeros(3, device=device, requires_grad=True)
+    tΔ   = torch.zeros(3, device=device, requires_grad=True)
+    log_s = torch.zeros(1, device=device, requires_grad=True) if use_scale else torch.zeros(1, device=device, requires_grad=False)
+
+    opt = torch.optim.Adam([rvec, tΔ, log_s], lr=lr)
+    best = {'IoU': -1.0, 'r': None, 't': None, 's': None}
+
+    for it in range(steps):
+        opt.zero_grad()
+        s = torch.exp(log_s)[0] if use_scale else torch.tensor(1.0, device=device)
+        # limit rotation to ±max_rot_deg to keep it stable
+        r_clamped = rvec.clamp(-max_rot_deg*pi/180, max_rot_deg*pi/180)
+        RΔ = _rodrigues(r_clamped.unsqueeze(0))[0]   # (3,3)
+
+        Rr, tr = _compose_with_delta(R_gt, t_gt, RΔ, tΔ, s)
+        _, sil = renderer(Rr, tr, K_r, image_size=(H, W))
+        sil = _ensure_nchw(sil.float()).clamp(0,1)
+        if flip_v: sil = torch.flip(sil, [2])
+        sil = _resize_to(sil, (H, W))
+
+        # IoU loss (maximize IoU => minimize 1-IoU)
+        A = (sil > 0.5).float(); Bm = (M > 0.5).float()
+        inter = (A*Bm).sum(dim=(1,2,3))
+        union = (A+Bm - A*Bm).sum(dim=(1,2,3)).clamp_min(1)
+        iou   = (inter/union).mean()
+        loss  = (1 - iou)
+        loss.backward()
+        opt.step()
+
+        if iou.item() > best['IoU']:
+            best = {'IoU': iou.item(), 'r': rvec.detach().clone(), 't': tΔ.detach().clone(), 's': float(torch.exp(log_s).item())}
+
+        if (it+1) % 50 == 0:
+            print(f"[Δcal] step {it+1}/{steps}  IoU={iou.item():.3f}  s={float(torch.exp(log_s).item()):.3f}  tΔ={tΔ.tolist()}  r={rvec.tolist()}")
+
+    # finalize
+    RΔ_best = _rodrigues(best['r'].unsqueeze(0))[0].detach()
+    tΔ_best = best['t'].detach()
+    s_best  = best['s'] if use_scale else 1.0
+    print(f"[Δcal] BEST  IoU={best['IoU']:.3f}  s={s_best:.3f}  tΔ={tΔ_best.tolist()}")
+    return {'R': RΔ_best, 't': tΔ_best, 's': s_best}
+
+
 _ALIGN = None
 _TSCALE = None
 
@@ -300,12 +389,19 @@ def pose_loss2(
 
     # ---------------- alignment probe (run once) ------
     global _ALIGN, _TSCALE
-    
+
     if _ALIGN is None:
         _ALIGN = probe_alignment(renderer, R_gt, t_gt, K, M, image_size)
     inv  = _ALIGN['invert']
     flip = _ALIGN['flip_v']
     hpx  = _ALIGN['halfpx']
+
+    global _DELTA
+    if _DELTA is None:
+        _DELTA = calibrate_delta(
+            renderer, Rr_gt, tr_gt, K_r, M, image_size=(H, W),
+            flip_v=flip, halfpx=hpx, steps=300, lr=5e-2, use_scale=True
+        )
 
     # Prepare extrinsics for rendering only (do NOT change what pose losses see)
     if inv:
@@ -337,10 +433,25 @@ def pose_loss2(
     M_use  = F.interpolate(M.float(),  size=(Hs, Ws), mode='bilinear', align_corners=False).clamp(0,1) if mask_downsample>1 else M.float()
     BG_use = F.interpolate(BG.float(), size=(Hs, Ws), mode='bilinear', align_corners=False).clamp(0,1) if mask_downsample>1 else BG.float()
 
-    rgb_hat, sil_hat = renderer(Rr_pred, tr_pred * s, K_r, image_size=(Hs, Ws))
+    #rgb_hat, sil_hat = renderer(Rr_pred, tr_pred * s, K_r, image_size=(Hs, Ws))
+    #sil_hat = _ensure_nchw(sil_hat).float().clamp(0,1)
+
+    #if flip:
+    #    sil_hat = torch.flip(sil_hat, [2])
+
+    # apply Δ to PRED for rendering/loss/vis
+    RΔ, tΔ, sΔ = _DELTA['R'], _DELTA['t'], _DELTA['s']
+    Rr_pred_eff, tr_pred_eff = _compose_with_delta(Rr_pred, tr_pred, RΔ, tΔ, sΔ)
+
+    # render at training resolution (Hs, Ws)
+    rgb_hat, sil_hat = renderer(Rr_pred_eff, tr_pred_eff, K_r, image_size=(Hs, Ws))
     sil_hat = _ensure_nchw(sil_hat).float().clamp(0,1)
-    if flip:
-        sil_hat = torch.flip(sil_hat, [2])
+    if flip: sil_hat = torch.flip(sil_hat, [2])
+
+    # GT IoU check using Δ as well (should jump up)
+    Rr_gt_eff, tr_gt_eff = _compose_with_delta(Rr_gt, tr_gt, RΔ, tΔ, sΔ)
+    iou_gt = gt_pose_iou(M, Rr_gt_eff, tr_gt_eff, K_r, renderer, image_size=(H, W))
+    print(f"[check] GT IoU (Δ-applied): {iou_gt:.3f}")
 
     has_fg = (M_use.sum(dim=(1,2,3)) > 10).float().view(-1,1,1,1)
     sil_eff = sil_hat * has_fg
@@ -368,8 +479,8 @@ def pose_loss2(
     overlay = F.interpolate(overlay, size=(H,W), mode='bilinear', align_corners=False).clamp(0,1)
 
     # Correct GT IoU check (mask only; render at image_size then resize inside)
-    iou_gt = gt_pose_iou(M, Rr_gt, tr_gt, K_r, renderer, image_size=(H, W))
-    print(f"[check] GT IoU: {iou_gt:.3f}")
+    #iou_gt = gt_pose_iou(M, Rr_gt, tr_gt, K, renderer, image_size=(H, W))
+    #print(f"[check] GT IoU: {iou_gt:.3f}")
 
     # --------------- total & logs --------------------
     loss = λR*L_R + λt*L_T + λmask*L_mask
