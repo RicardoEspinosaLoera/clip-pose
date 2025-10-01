@@ -235,6 +235,14 @@ def _so3_relative_angle(R1, R2, eps=1e-6):
     return torch.atan2(sin, cos)  # (B,) radians
 
 # ---------- stable rotation loss ----------
+def _project_to_so3(R):
+    U, _, Vt = torch.linalg.svd(R)
+    Rproj = U @ Vt
+    det = torch.det(Rproj).unsqueeze(-1).unsqueeze(-1)
+    Vt_fix = torch.where(det < 0,
+                         torch.cat([Vt[..., :2, :], -Vt[..., 2:3, :]], dim=-2),
+                         Vt)
+    return U @ Vt_fix
 
 def _so3_angle(R1, R2, eps=1e-6):
     R = torch.einsum('bij,bjk->bik', R1.transpose(1,2), R2)
@@ -246,24 +254,14 @@ def _so3_angle(R1, R2, eps=1e-6):
     sin = (0.5 * torch.linalg.norm(v, dim=-1)).clamp(0, 1.0-eps)
     return torch.atan2(sin, cos)   # (B,)
 
+def rot_geodesic_loss(R_pred, R_gt, eps=1e-7):
+    # optional: project to SO(3) if your head outputs aren't guaranteed orthonormal
+    # R_pred = _project_to_so3(R_pred)
 
-def _project_to_so3(R):
-    # Orthonormalize with SVD; stable for backprop
-    U, _, Vt = torch.linalg.svd(R)
-    Rproj = U @ Vt
-    # Fix improper rotations (det = -1)
-    det = torch.det(Rproj).unsqueeze(-1).unsqueeze(-1)
-    Rproj = torch.where(det < 0, U @ torch.diag_embed(torch.tensor([1.,1.,-1.], device=R.device)) @ Vt, Rproj)
-    return Rproj
-
-def rot_geodesic_loss(R_pred, R_gt, eps=1e-7, project=True):
-    if project:
-        R_pred = _project_to_so3(R_pred)
     Rt = torch.einsum('bij,bjk->bik', R_pred.transpose(1,2), R_gt)
-    tr = Rt[:,0,0] + Rt[:,1,1] + Rt[:,2,2]
+    tr = Rt[:, 0, 0] + Rt[:, 1, 1] + Rt[:, 2, 2]
     cos = ((tr - 1.0) * 0.5).clamp(-1.0 + eps, 1.0 - eps)
-    L = torch.acos(cos).mean()
-    return torch.where(torch.isfinite(L), L, torch.zeros_like(L))
+    return torch.acos(cos).mean()
 
 
 # ---------- rendering safety helpers ----------
@@ -377,7 +375,6 @@ def so3_reg(R):
     det_pen = (torch.det(R) - 1.0).pow(2).mean()
     return ortho + 0.1 * det_pen
 
-
 def pose_loss2(
     R_pred, t_pred, R_gt, t_gt, D_obj,
     M, K, image_size, renderer, BG,
@@ -385,101 +382,72 @@ def pose_loss2(
     λmask=1.0, λbce=1.0, λdice=0.5, λedge=0.0,
     mask_downsample=1, z_min=1e-2, z_max=None,
     make_vis=True,
-    anchor_fill=0.85,       # margin used by FOV-fit
-    anchor_alpha=0.0        # blend between anchor and prediction (0..1)
+    anchor_fill=0.85,       # NEW: margin used by FOV-fit
+    anchor_alpha=0.0        # NEW: blend between anchor and prediction (0..1)
 ):
-
-    device = R_pred.device
-    dtype  = R_pred.dtype
-
-    # --- base pose losses ---
+    # --- base pose losses (as before) ---
     L_R = rot_geodesic_loss(R_pred, R_gt)
     L_T = normalized_t_loss(t_pred, t_gt, D_obj)
 
+    print(R_pred[0])
     H, W = image_size
-    if mask_downsample > 1:
-        Hs, Ws = H // mask_downsample, W // mask_downsample
-        M_use  = F.interpolate(M.float(),  size=(Hs, Ws), mode='bilinear', align_corners=False).clamp(0, 1)
-        BG_use = F.interpolate(BG.float(), size=(Hs, Ws), mode='bilinear', align_corners=False).clamp(0, 1)
-    else:
-        Hs, Ws = H, W
-        M_use, BG_use = M.float(), BG.float()
+    Hs, Ws = (H//mask_downsample, W//mask_downsample) if mask_downsample>1 else (H, W)
 
-    # Intrinsics scaled to the render size
+    # Downsample GT mask / BG to match render size
+    M_use  = F.interpolate(M.float(),  size=(Hs, Ws), mode='bilinear', align_corners=False).clamp(0,1) if mask_downsample>1 else M.float()
+    BG_use = F.interpolate(BG.float(), size=(Hs, Ws), mode='bilinear', align_corners=False).clamp(0,1) if mask_downsample>1 else BG.float()
+
+    # Make K consistent with render size
     K_use = rescale_K(K, H, W, Hs, Ws)
 
     # ---- anchor for visibility (per-batch) ----
     # Enforce tz>0 on the prediction used for rendering
+    #t_pred_render = t_pred.clone()
+    #t_pred_render[:, 2] = F.softplus(t_pred_render[:, 2]) + 1e-2
+
     t_pred_render = t_pred.clone()
-    tz = F.softplus(t_pred_render[:, 2:3]) + 1e-2  # (B,1)
+    tz = F.softplus(t_pred_render[:, 2:3]) + 1e-2      # (B,1)
     t_pred_render = torch.cat([t_pred_render[:, :2], tz], dim=1)
 
-    # Anchor translation that guarantees visibility (non-diff)
     t_anchor = fit_batch_in_fov(renderer, R_pred.detach(), K_use, Hs, Ws, fill=anchor_fill)
-
-    # Blend anchor with prediction (alpha=0 -> all anchor; alpha=1 -> all pred)
+    # Blend: alpha=0 => all anchor (guaranteed visible), alpha=1 => all t_pred_render
     t_render = (1.0 - anchor_alpha) * t_anchor + anchor_alpha * t_pred_render
 
-    # Convert cam->obj (your network's convention) to world->camera for the renderer
     R_pred_w2c, t_pred_w2c = cam2obj_to_world2cam(R_pred, t_render)
-
-    # ---- differentiable render with robust guard ----
-    def _safe_black(B):
-        rgb0 = torch.zeros(B, 3, Hs, Ws, device=device, dtype=dtype)
-        sil0 = torch.zeros(B, 1, Hs, Ws, device=device, dtype=dtype)
-        return rgb0, sil0
-
-    B = R_pred.shape[0]
-    try:
-        rgb_hat, sil_hat = renderer(R_pred_w2c, t_pred_w2c, K_use, image_size=(Hs, Ws))
-    except Exception:
-        # Fail-safe: if Kaolin throws (e.g., zero valid faces), return black
-        rgb_hat, sil_hat = _safe_black(B)
-
-    # If the renderer returned tensors but they’re empty or NaN, sanitize
-    if (sil_hat.numel() == 0) or torch.isnan(sil_hat).any() or torch.isinf(sil_hat).any():
-        rgb_hat, sil_hat = _safe_black(B)
-
-    sil_hat = sil_hat.float().clamp(0, 1)  # (B,1,Hs,Ws)
+    #R_gt_w2c,  t_gt_w2c    = cam2obj_to_world2cam(R_gt,  t_gt)
+    rgb_hat, sil_hat = renderer(R_pred_w2c, t_render, K_use, image_size=(Hs,Ws))
+    # ---- differentiable render (Kaolin DIB-R) ----
+    #rgb_hat, sil_hat = renderer(R_pred, t_render, K_use, image_size=(Hs, Ws))
+    sil_hat = sil_hat.float().clamp(0,1)  # (B,1,Hs,Ws)
 
     # ---- silhouette loss (optional) ----
-    L_mask  = torch.tensor(0., device=device, dtype=dtype)
-    bce_val = torch.tensor(0., device=device, dtype=dtype)
-    dice_val = torch.tensor(0., device=device, dtype=dtype)
-    edge_val = torch.tensor(0., device=device, dtype=dtype)
+    L_mask = torch.tensor(0., device=R_pred.device, dtype=L_R.dtype)
+    bce_val = torch.tensor(0., device=R_pred.device)
+    dice_val = torch.tensor(0., device=R_pred.device)
+    edge_val = torch.tensor(0., device=R_pred.device)
 
-    # Only compute mask loss for items that actually have foreground GT
-    has_fg = (M_use.sum(dim=(1, 2, 3)) > 10).float().view(-1, 1, 1, 1)
+    has_fg = (M_use.sum(dim=(1,2,3)) > 10).float().view(-1,1,1,1)
     sil_eff = sil_hat * has_fg
     M_eff   = M_use   * has_fg
 
-    # Empty-render guard: don’t crash / explode grads if nothing is visible
-    empty_render = (sil_hat.sum(dim=(1, 2, 3)) <= 0)
-    # (Optional) tiny forward-visibility penalty to discourage tz→0
-    # L_vis = F.relu(1e-2 - tz.squeeze(1)).mean()  # Uncomment if you want it
-    # keep it out by default to preserve your original objective
-
-    if λmask > 0.0 and has_fg.any() and (~empty_render).any():
-        # Only supervise BCE/DICE on batches where something rendered
-        bce_val  = F.binary_cross_entropy(sil_eff.clamp(1e-6, 1-1e-6), M_eff)
+    if λmask > 0.0 and has_fg.any():
+        bce_val  = F.binary_cross_entropy(sil_eff.clamp(1e-6,1-1e-6), M_eff)
         dice_val = _dice_loss(sil_eff, M_eff)
         if λedge > 0.0:
             gp = _sobel_grad(sil_eff); gg = _sobel_grad(M_eff)
             edge_val = F.l1_loss(gp, gg)
-        L_mask = λbce * bce_val + λdice * dice_val + λedge * edge_val
-    # else: no mask supervision this step (keeps graph valid, avoids Kaolin crash)
+        L_mask = λbce*bce_val + λdice*dice_val + λedge*edge_val
 
     # ---- totals ----
-    loss = λR * L_R + λt * L_T + λmask * L_mask  # + (1e-4 * L_vis if enabled)
-
+    loss = λR*L_R + λt*L_T + λmask*L_mask
+    
     logs = {
-        'rot_rad':   L_R.detach(),
-        'trans_n':   L_T.detach(),
-        'mask_bce':  bce_val.detach(),
+        'rot_rad': L_R.detach(),
+        'trans_n': L_T.detach(),
+        'mask_bce': bce_val.detach(),
         'mask_dice': dice_val.detach(),
         'mask_edge': edge_val.detach(),
-        'empty_render': empty_render.float().mean().detach(),
-        'anchor_alpha': torch.tensor(anchor_alpha, device=device, dtype=dtype)
+        'anchor_alpha': torch.tensor(anchor_alpha, device=R_pred.device)
     }
 
     if not make_vis:
@@ -487,11 +455,10 @@ def pose_loss2(
 
     # ---- visuals (downsampled or upsample back) ----
     I_comp  = composite(rgb_hat, BG_use, sil_eff)
-    overlay = overlay_mask_on_image(BG_use, sil_eff, color=(0, 1, 0), alpha=0.6, outline_px=2)
+    overlay = overlay_mask_on_image(BG_use, sil_eff, color=(0,1,0), alpha=0.6, outline_px=2)
 
     if mask_downsample > 1:
-        I_comp  = F.interpolate(I_comp,  size=(H, W), mode='bilinear', align_corners=False).clamp(0, 1)
-        overlay = F.interpolate(overlay, size=(H, W), mode='bilinear', align_corners=False).clamp(0, 1)
+        I_comp  = F.interpolate(I_comp,  size=(H, W), mode='bilinear', align_corners=False).clamp(0,1)
+        overlay = F.interpolate(overlay, size=(H, W), mode='bilinear', align_corners=False).clamp(0,1)
 
     return loss, logs, I_comp, overlay
-
