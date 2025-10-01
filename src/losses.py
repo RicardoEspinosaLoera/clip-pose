@@ -319,31 +319,97 @@ def _render_safe(renderer, R, t, K, image_size, flip_v=False):
 def normalized_t_loss(t_pred, t_gt, D_obj, eps=1e-8): 
     return (torch.linalg.norm(t_pred - t_gt, dim=1) / (D_obj + eps)).mean()
 
+import torch
+import torch.nn.functional as F
+
+# --- helper 0: (optional) rescale intrinsics if you render at a different size ---
+def rescale_K(K, old_H, old_W, new_H, new_W):
+    if (new_H == old_H) and (new_W == old_W):
+        return K
+    K_ = K.clone().float()
+    sx, sy = new_W / float(old_W), new_H / float(old_H)
+    K_[:, 0, 0] *= sx;  K_[:, 1, 1] *= sy
+    K_[:, 0, 2] *= sx;  K_[:, 1, 2] *= sy
+    return K_
+
+# --- helper 1: your FOV fit (unchanged) ---
+def fit_mesh_in_fov(verts, R, K, H, W, fill=0.9):
+    """
+    Returns t so v_cam = R @ v + t:
+      - projects the mesh center to (cx,cy)
+      - chooses a depth so the mesh fits within the frame with margin `fill`
+    """
+    device = verts.device
+    R = R.to(device).float(); K = K.to(device).float()
+
+    fx, fy = K[0,0], K[1,1]
+    cx, cy = K[0,2], K[1,2]
+
+    c_world    = verts.mean(dim=0)              # (3,)
+    v_centered = verts - c_world                # (V,3)
+    v_cam_rot  = (R @ v_centered.t()).t()       # (V,3)
+
+    rx = v_cam_rot[:,0].abs().max()
+    ry = v_cam_rot[:,1].abs().max()
+
+    half_w = torch.minimum(cx, (W - 1 - cx))
+    half_h = torch.minimum(cy, (H - 1 - cy))
+
+    eps = torch.tensor(1e-6, device=device)
+    need_zx = fx * rx / torch.maximum(fill * half_w, eps)
+    need_zy = fy * ry / torch.maximum(fill * half_h, eps)
+    z_cam   = torch.maximum(need_zx, need_zy).clamp_min(1e-2)
+
+    Rc = R @ c_world
+    t  = torch.tensor([0.0, 0.0, z_cam], device=device) - Rc
+    return t
+
+# --- helper 2: batched anchor translation ---
+@torch.no_grad()
+def fit_batch_in_fov(renderer, R, K, H, W, fill=0.9):
+    device = renderer.verts.device
+    R = R.to(device).float(); K = K.to(device).float()
+    t_list = [fit_mesh_in_fov(renderer.verts, R[b], K[b], H, W, fill) for b in range(R.shape[0])]
+    return torch.stack(t_list, 0)  # (B,3)
+
 def pose_loss2(
     R_pred, t_pred, R_gt, t_gt, D_obj,
     M, K, image_size, renderer, BG,
     λR=0.5, λt=0.5,
-    λmask=1.0, λbce=1.0, λdice=0.5, λedge=0.0,  # set λedge=0 for speed
-    mask_downsample=1,z_min=1e-2, z_max=None,
-    make_vis=True                              # turn off visuals to speed up
+    λmask=1.0, λbce=1.0, λdice=0.5, λedge=0.0,
+    mask_downsample=1, z_min=1e-2, z_max=None,
+    make_vis=True,
+    anchor_fill=0.85,       # NEW: margin used by FOV-fit
+    anchor_alpha=0.0        # NEW: blend between anchor and prediction (0..1)
 ):
-    # base pose losses (your originals)
+    # --- base pose losses (as before) ---
     L_R = rot_geodesic_loss(R_pred, R_gt)
     L_T = normalized_t_loss(t_pred, t_gt, D_obj)
 
     H, W = image_size
     Hs, Ws = (H//mask_downsample, W//mask_downsample) if mask_downsample>1 else (H, W)
 
+    # Downsample GT mask / BG to match render size
     M_use  = F.interpolate(M.float(),  size=(Hs, Ws), mode='bilinear', align_corners=False).clamp(0,1) if mask_downsample>1 else M.float()
     BG_use = F.interpolate(BG.float(), size=(Hs, Ws), mode='bilinear', align_corners=False).clamp(0,1) if mask_downsample>1 else BG.float()
 
-    #Rr_pred_eff, tr_pred_eff = _compose_with_delta(R_pred, t_pred, RΔ, tΔ, sΔ)
-    #rgb_hat, sil_hat = _render_safe(renderer, Rr_pred_s, tr_pred_s, K, (Hs, Ws))
-    rgb_hat, sil_hat = renderer(R_pred, t_pred, K, image_size=(Hs, Ws))
-    sil_hat = _ensure_nchw(sil_hat).float().clamp(0,1)
-    #if flip: sil_hat = torch.flip(sil_hat, [2])
+    # Make K consistent with render size
+    K_use = rescale_K(K, H, W, Hs, Ws)
 
-    # silhouette loss
+    # ---- anchor for visibility (per-batch) ----
+    # Enforce tz>0 on the prediction used for rendering
+    t_pred_render = t_pred.clone()
+    t_pred_render[:, 2] = F.softplus(t_pred_render[:, 2]) + 1e-2
+
+    t_anchor = fit_batch_in_fov(renderer, R_pred.detach(), K_use, Hs, Ws, fill=anchor_fill)
+    # Blend: alpha=0 => all anchor (guaranteed visible), alpha=1 => all t_pred_render
+    t_render = (1.0 - anchor_alpha) * t_anchor + anchor_alpha * t_pred_render
+
+    # ---- differentiable render (Kaolin DIB-R) ----
+    rgb_hat, sil_hat = renderer(R_pred, t_render, K_use, image_size=(Hs, Ws))
+    sil_hat = sil_hat.float().clamp(0,1)  # (B,1,Hs,Ws)
+
+    # ---- silhouette loss (optional) ----
     L_mask = torch.tensor(0., device=R_pred.device, dtype=L_R.dtype)
     bce_val = torch.tensor(0., device=R_pred.device)
     dice_val = torch.tensor(0., device=R_pred.device)
@@ -354,18 +420,14 @@ def pose_loss2(
     M_eff   = M_use   * has_fg
 
     if λmask > 0.0 and has_fg.any():
-        bce_val  = F.binary_cross_entropy(sil_eff, M_eff)
+        bce_val  = F.binary_cross_entropy(sil_eff.clamp(1e-6,1-1e-6), M_eff)
         dice_val = _dice_loss(sil_eff, M_eff)
         if λedge > 0.0:
             gp = _sobel_grad(sil_eff); gg = _sobel_grad(M_eff)
             edge_val = F.l1_loss(gp, gg)
         L_mask = λbce*bce_val + λdice*dice_val + λedge*edge_val
 
-    # GT IoU (low-cost, once in a while you can compute full-res outside)
-    #Rr_gt_eff, tr_gt_eff = _compose_with_delta(Rr_gt, tr_gt, RΔ, tΔ, sΔ)
-    #gt_iou = gt_pose_iou(M, Rr_gt_eff, tr_gt_eff, K_r, renderer, image_size=(H, W))
-
-    # totals
+    # ---- totals ----
     loss = λR*L_R + λt*L_T + λmask*L_mask
     logs = {
         'rot_rad': L_R.detach(),
@@ -373,16 +435,18 @@ def pose_loss2(
         'mask_bce': bce_val.detach(),
         'mask_dice': dice_val.detach(),
         'mask_edge': edge_val.detach(),
+        'anchor_alpha': torch.tensor(anchor_alpha, device=R_pred.device)
     }
 
     if not make_vis:
-        return loss, logs  # fastest path
+        return loss, logs
 
-    # Optional visuals (downsampled or upsample back if you want)
+    # ---- visuals (downsampled or upsample back) ----
     I_comp  = composite(rgb_hat, BG_use, sil_eff)
     overlay = overlay_mask_on_image(BG_use, sil_eff, color=(0,1,0), alpha=0.6, outline_px=2)
-    #overlay = overlay_mask_on_image(overlay, M_eff,  color=(1,0,0), alpha=0.6, outline_px=2)
 
-    I_comp  = F.interpolate(I_comp,  size=(H, W), mode='bilinear', align_corners=False).clamp(0,1) if mask_downsample>1 else I_comp
-    overlay = F.interpolate(overlay, size=(H, W), mode='bilinear', align_corners=False).clamp(0,1) if mask_downsample>1 else overlay
+    if mask_downsample > 1:
+        I_comp  = F.interpolate(I_comp,  size=(H, W), mode='bilinear', align_corners=False).clamp(0,1)
+        overlay = F.interpolate(overlay, size=(H, W), mode='bilinear', align_corners=False).clamp(0,1)
+
     return loss, logs, I_comp, overlay
