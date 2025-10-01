@@ -1,6 +1,7 @@
 # src/camera.py
 import math
 import numpy as np
+import torch
 
 def _normalize(v, eps=1e-9):
     n = np.linalg.norm(v)
