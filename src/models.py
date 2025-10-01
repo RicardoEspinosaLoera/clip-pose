@@ -31,13 +31,24 @@ class Regressor(nn.Module):
 
         # translation: predict normalized tx,ty,logz; then un-normalize by D_obj
         txn, tyn, logzn = t3[...,0], t3[...,1], t3[...,2]
-        zn = torch.exp(logzn).clamp(min=1e-6)     # positive normalized depth
-        t_norm = torch.stack([txn, tyn, zn], -1)  # (B,3)
+        zn = torch.exp(logzn.clamp(-6, 6)).clamp_min(1e-6)   # stability
+        t_norm = torch.stack([txn, tyn, zn], -1)             # (B,3)
 
         if D_obj is None:
-            # return normalized if diameter not given (e.g., for loss code to handle)
             return r6, t_norm
         else:
-            D = D_obj.view(-1,1)                  # (B,1)
-            t = t_norm * D                        # meters
+            # --- make D_obj a (B,1) tensor matching x ---
+            if not torch.is_tensor(D_obj):
+                D_obj = torch.tensor(D_obj, device=t3.device, dtype=t3.dtype)
+            D_obj = D_obj.to(device=t3.device, dtype=t3.dtype)
+
+            B = x.shape[0]
+            if D_obj.dim() == 0:
+                D_obj = D_obj.expand(B)          # scalar -> (B,)
+            elif D_obj.dim() == 1 and D_obj.shape[0] != B:
+                # in case someone passes wrong shape, broadcast safely
+                D_obj = D_obj.reshape(1).expand(B)
+
+            D = D_obj.view(-1, 1)                # (B,1)
+            t = t_norm * D                       # meters
             return r6, t
