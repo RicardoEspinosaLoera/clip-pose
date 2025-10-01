@@ -415,9 +415,9 @@ def pose_loss2(
     # Blend: alpha=0 => all anchor (guaranteed visible), alpha=1 => all t_pred_render
     t_render = (1.0 - anchor_alpha) * t_anchor + anchor_alpha * t_pred_render
 
-    R_pred_w2c, t_pred_w2c = cam2obj_to_world2cam(R_pred, t_pred)
-    R_gt_w2c,  t_gt_w2c    = cam2obj_to_world2cam(R_gt,  t_gt)
-    rgb_hat, sil_hat = renderer(R_pred_w2c, t_render, K_use, image_size=(Hs,Ws))
+    R_pred_w2c, t_pred_w2c = cam2obj_to_world2cam(R_pred, t_render)
+    #R_gt_w2c,  t_gt_w2c    = cam2obj_to_world2cam(R_gt,  t_gt)
+    rgb_hat, sil_hat = renderer(R_pred_w2c, t_pred_w2c, K_use, image_size=(Hs,Ws))
     # ---- differentiable render (Kaolin DIB-R) ----
     #rgb_hat, sil_hat = renderer(R_pred, t_render, K_use, image_size=(Hs, Ws))
     sil_hat = sil_hat.float().clamp(0,1)  # (B,1,Hs,Ws)
