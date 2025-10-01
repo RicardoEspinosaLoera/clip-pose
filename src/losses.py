@@ -403,8 +403,8 @@ def pose_loss2(
     M_use  = F.interpolate(M.float(),  size=(Hs, Ws), mode='bilinear', align_corners=False).clamp(0,1) if mask_downsample>1 else M.float()
     BG_use = F.interpolate(BG.float(), size=(Hs, Ws), mode='bilinear', align_corners=False).clamp(0,1) if mask_downsample>1 else BG.float()
 
-    Rr_pred_eff, tr_pred_eff = _compose_with_delta(Rr_pred, tr_pred, RΔ, tΔ, sΔ)
-    rgb_hat, sil_hat = renderer(Rr_pred_eff, tr_pred_eff, K_r, image_size=(Hs, Ws))
+    #Rr_pred_eff, tr_pred_eff = _compose_with_delta(R_pred, t_pred, RΔ, tΔ, sΔ)
+    rgb_hat, sil_hat = renderer(R_pred, tr_pred, K, image_size=(Hs, Ws))
     sil_hat = _ensure_nchw(sil_hat).float().clamp(0,1)
     if flip: sil_hat = torch.flip(sil_hat, [2])
 
@@ -427,8 +427,8 @@ def pose_loss2(
         L_mask = λbce*bce_val + λdice*dice_val + λedge*edge_val
 
     # GT IoU (low-cost, once in a while you can compute full-res outside)
-    Rr_gt_eff, tr_gt_eff = _compose_with_delta(Rr_gt, tr_gt, RΔ, tΔ, sΔ)
-    gt_iou = gt_pose_iou(M, Rr_gt_eff, tr_gt_eff, K_r, renderer, image_size=(H, W))
+    #Rr_gt_eff, tr_gt_eff = _compose_with_delta(Rr_gt, tr_gt, RΔ, tΔ, sΔ)
+    #gt_iou = gt_pose_iou(M, Rr_gt_eff, tr_gt_eff, K_r, renderer, image_size=(H, W))
 
     # totals
     loss = λR*L_R + λt*L_T + λmask*L_mask
