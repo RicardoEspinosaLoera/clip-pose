@@ -231,7 +231,7 @@ def run_epoch(model, renderer, loader, device, cfg, P_obj, D_obj, verts, mode,
         K  = batch['K'].to(device)
         M  = batch['mask'].to(device)
 
-        r6, t_pred = model(I)
+        r6, t_pred = model(I, D_obj=D_obj.to(device))
         R_pred = sixd_to_rotmat(r6)
         #R_pred = project_to_so3(R_pred) 
         #R_gt = sixd_to_rotmat(R_gt)
@@ -276,7 +276,7 @@ def run_epoch(model, renderer, loader, device, cfg, P_obj, D_obj, verts, mode,
             batch_Rdeg = float(ang_rad.mean().item() * 180.0 / np.pi)
 
             # normalized translation (mean over batch)
-            tn = torch.linalg.norm(t_pred - t_gt, dim=1) / (D_obj + 1e-8)  # (B,)
+            tn = torch.linalg.norm(t_pred - t_gt, dim=1) / (D_obj.to(device).view(-1) + 1e-8)
             batch_Tn = float(tn.mean().item())
 
         bsz = I.size(0)
