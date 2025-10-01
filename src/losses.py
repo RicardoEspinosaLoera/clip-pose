@@ -438,7 +438,6 @@ def pose_loss2(
         'mask_bce': bce_val.detach(),
         'mask_dice': dice_val.detach(),
         'mask_edge': edge_val.detach(),
-        'gt_iou': torch.tensor(gt_iou, device=R_pred.device)
     }
 
     if not make_vis:
