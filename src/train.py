@@ -180,6 +180,15 @@ def rot_angles_rad(R_pred, R_gt, eps=1e-6):
     cos = ((tr - 1.0) * 0.5).clamp(-1 + eps, 1 - eps)
     return torch.acos(cos)  # (B,)
 
+def project_to_so3(R):
+    # nearest rotation via polar decomposition; differentiable
+    U, S, Vh = torch.linalg.svd(R)
+    Rhat = U @ Vh
+    # enforce det=+1
+    det = torch.det(Rhat).unsqueeze(-1).unsqueeze(-1)
+    C = torch.eye(3, device=R.device).expand_as(Rhat).clone()
+    C[..., -1, -1] = torch.where(det < 0, -1.0, 1.0)
+    return U @ C @ Vh
 
 def run_epoch(model, renderer, loader, device, cfg, P_obj, D_obj, verts, mode,
               optimizer=None, wb_logger=None):
@@ -209,6 +218,9 @@ def run_epoch(model, renderer, loader, device, cfg, P_obj, D_obj, verts, mode,
 
         r6, t_pred = model(I)
         R_pred = sixd_to_rotmat(r6)
+        R_pred = project_to_so3(R_pred) 
+        R_gt = sixd_to_rotmat(R_gt)
+        R_gt = project_to_so3(R_gt)
         H, W = I.shape[-2], I.shape[-1]
 
         #Rendering

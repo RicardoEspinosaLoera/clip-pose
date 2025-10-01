@@ -378,6 +378,13 @@ def cam2obj_to_world2cam(R_co, t_co):
     t_oc = -(R_oc @ t_co.unsqueeze(-1)).squeeze(-1)   # inverse
     return R_oc, t_oc
 
+def so3_reg(R):
+    I = torch.eye(3, device=R.device).unsqueeze(0)
+    RtR = R.transpose(1,2) @ R
+    ortho = (RtR - I).pow(2).mean()
+    det_pen = (torch.det(R) - 1.0).pow(2).mean()
+    return ortho + 0.1 * det_pen
+
 def pose_loss2(
     R_pred, t_pred, R_gt, t_gt, D_obj,
     M, K, image_size, renderer, BG,
@@ -442,6 +449,7 @@ def pose_loss2(
 
     # ---- totals ----
     loss = λR*L_R + λt*L_T + λmask*L_mask
+    
     logs = {
         'rot_rad': L_R.detach(),
         'trans_n': L_T.detach(),
