@@ -233,7 +233,7 @@ def run_epoch(model, renderer, loader, device, cfg, P_obj, D_obj, verts, mode,
 
         B = I.size(0)
         D_batch = torch.as_tensor(D_obj, device=device, dtype=I.dtype).expand(B)  # (B,)
-        r6, t_pred = model(I, D_obj=D_obj)
+        r6, t_pred = model(I, D_obj=D_batch)
         R_pred = sixd_to_rotmat(r6)
         #R_pred = project_to_so3(R_pred) 
         #R_gt = sixd_to_rotmat(R_gt)
@@ -278,7 +278,7 @@ def run_epoch(model, renderer, loader, device, cfg, P_obj, D_obj, verts, mode,
             batch_Rdeg = float(ang_rad.mean().item() * 180.0 / np.pi)
 
             # normalized translation (mean over batch)
-            tn = torch.linalg.norm(t_pred - t_gt, dim=1) / (D_obj.view(-1, 1) + 1e-8)
+            tn = torch.linalg.norm(t_pred - t_gt, dim=1) / (D_batch + 1e-8)  # (B,) / (B,)
             batch_Tn = float(tn.mean().item())
 
         bsz = I.size(0)
