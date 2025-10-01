@@ -234,10 +234,10 @@ def run_epoch(model, renderer, loader, device, cfg, P_obj, D_obj, verts, mode,
         B = I.size(0)
         D_batch = torch.as_tensor(D_obj, device=device, dtype=I.dtype).expand(B)  # (B,)
         r6, t_pred = model(I, D_obj=D_batch)
+
         R_pred = sixd_to_rotmat(r6)
-        #R_pred = project_to_so3(R_pred) 
-        #R_gt = sixd_to_rotmat(R_gt)
-        #R_gt = project_to_so3(R_gt)
+        R_pred = project_to_so3(R_pred)
+
         H, W = I.shape[-2], I.shape[-1]
 
         #Rendering

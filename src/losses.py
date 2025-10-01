@@ -408,6 +408,7 @@ def pose_loss2(
     tz = F.softplus(t_pred_render[:, 2:3]) + 1e-2      # (B,1)
     t_pred_render = torch.cat([t_pred_render[:, :2], tz], dim=1)
 
+    R_pred = project_to_so3(R_pred)
     t_anchor = fit_batch_in_fov(renderer, R_pred.detach(), K_use, Hs, Ws, fill=anchor_fill)
     # Blend: alpha=0 => all anchor (guaranteed visible), alpha=1 => all t_pred_render
     t_render = (1.0 - anchor_alpha) * t_anchor + anchor_alpha * t_pred_render
