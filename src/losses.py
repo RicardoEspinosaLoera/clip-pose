@@ -32,8 +32,8 @@ def sample_mesh_points(verts, faces, n=1500):
 
 def rot_geodesic_loss(R_pred, R_gt, eps=1e-7): 
     """Geodesic rotation loss in radians. R_*: (B,3,3)""" 
-    Rt = torch.einsum('bij,bjk->bik', R_pred.transpose(1,2), R_gt) # R_p^T 
-    R_g tr = Rt[:, 0,0] + Rt[:, 1,1] + Rt[:, 2,2] 
+    Rt = torch.einsum('bij,bjk->bik', R_pred.transpose(1,2), R_gt) # R_p^T R_g 
+    tr = Rt[:, 0,0] + Rt[:, 1,1] + Rt[:, 2,2] 
     cos = ((tr - 1.0) * 0.5).clamp(-1.0 + eps, 1.0 - eps) 
     return torch.acos(cos).mean()
 
