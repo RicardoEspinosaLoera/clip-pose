@@ -235,14 +235,6 @@ def _so3_relative_angle(R1, R2, eps=1e-6):
     return torch.atan2(sin, cos)  # (B,) radians
 
 # ---------- stable rotation loss ----------
-def _project_to_so3(R):
-    U, _, Vt = torch.linalg.svd(R)
-    Rproj = U @ Vt
-    det = torch.det(Rproj).unsqueeze(-1).unsqueeze(-1)
-    Vt_fix = torch.where(det < 0,
-                         torch.cat([Vt[..., :2, :], -Vt[..., 2:3, :]], dim=-2),
-                         Vt)
-    return U @ Vt_fix
 
 def _so3_angle(R1, R2, eps=1e-6):
     R = torch.einsum('bij,bjk->bik', R1.transpose(1,2), R2)
@@ -254,26 +246,24 @@ def _so3_angle(R1, R2, eps=1e-6):
     sin = (0.5 * torch.linalg.norm(v, dim=-1)).clamp(0, 1.0-eps)
     return torch.atan2(sin, cos)   # (B,)
 
-"""def rot_geodesic_loss(R_pred, R_gt, project=True, mode='chordal'):
+
+def _project_to_so3(R):
+    # Orthonormalize with SVD; stable for backprop
+    U, _, Vt = torch.linalg.svd(R)
+    Rproj = U @ Vt
+    # Fix improper rotations (det = -1)
+    det = torch.det(Rproj).unsqueeze(-1).unsqueeze(-1)
+    Rproj = torch.where(det < 0, U @ torch.diag_embed(torch.tensor([1.,1.,-1.], device=R.device)) @ Vt, Rproj)
+    return Rproj
+
+def rot_geodesic_loss(R_pred, R_gt, eps=1e-7, project=True):
     if project:
         R_pred = _project_to_so3(R_pred)
-    if mode == 'geodesic':
-        return _so3_angle(R_pred, R_gt).mean()
-    # chordal = 1 - cosθ
     Rt = torch.einsum('bij,bjk->bik', R_pred.transpose(1,2), R_gt)
     tr = Rt[:,0,0] + Rt[:,1,1] + Rt[:,2,2]
-    cos = ((tr - 1.0) * 0.5).clamp(-0.999999, 0.999999)
-    return (1.0 - cos).mean()"""
-
-
-def rot_geodesic_loss(R_pred, R_gt, eps=1e-7):
-    # optional: project to SO(3) if your head outputs aren't guaranteed orthonormal
-    # R_pred = _project_to_so3(R_pred)
-
-    Rt = torch.einsum('bij,bjk->bik', R_pred.transpose(1,2), R_gt)
-    tr = Rt[:, 0, 0] + Rt[:, 1, 1] + Rt[:, 2, 2]
     cos = ((tr - 1.0) * 0.5).clamp(-1.0 + eps, 1.0 - eps)
-    return torch.acos(cos).mean()
+    L = torch.acos(cos).mean()
+    return torch.where(torch.isfinite(L), L, torch.zeros_like(L))
 
 
 # ---------- rendering safety helpers ----------
