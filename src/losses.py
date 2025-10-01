@@ -290,8 +290,12 @@ from math import pi
 
 _DELTA = None  # {'R':(3,3), 't':(3,), 's':float}
 
+def _resize_to(x, size):
+    if x.shape[-2:] != size:
+        x = F.interpolate(x, size=size, mode='bilinear', align_corners=False).clamp(0,1)
+    return x
+
 def _rodrigues(r):
-    # r: (...,3)
     theta = torch.clamp(torch.linalg.norm(r, dim=-1, keepdim=True), min=1e-8)
     k = r / theta
     K = torch.zeros(r.shape[:-1]+(3,3), device=r.device, dtype=r.dtype)
@@ -301,15 +305,7 @@ def _rodrigues(r):
     I = torch.eye(3, device=r.device, dtype=r.dtype).expand_as(K)
     return I + torch.sin(theta)[...,None]*K + (1-torch.cos(theta))[...,None]*(K@K)
 
-@torch.no_grad()
-def _resize_to(img, size):
-    x = img
-    if x.shape[-2:] != size:
-        x = F.interpolate(x, size=size, mode='bilinear', align_corners=False).clamp(0,1)
-    return x
-
 def _compose_with_delta(R, t, RΔ, tΔ, s):
-    # R,t: (B,3,3),(B,3), RΔ:(3,3), tΔ:(3,), s: scalar
     B = R.size(0)
     RΔB = RΔ.unsqueeze(0).expand(B,3,3)
     tΔB = tΔ.unsqueeze(0).expand(B,3)
@@ -317,65 +313,74 @@ def _compose_with_delta(R, t, RΔ, tΔ, s):
     tr  = s*t + torch.einsum('bij,bj->bi', R, s*tΔB)
     return Rr, tr
 
-@torch.no_grad()
-def calibrate_delta(renderer, R_gt, t_gt, K, M, image_size, flip_v=False, halfpx=-0.5, 
-                    steps=300, lr=5e-2, use_scale=True, max_rot_deg=30):
+def _soft_iou(pred, target, eps=1e-6):
+    # pred/target: (B,1,H,W) in [0,1]
+    inter = (pred * target).sum(dim=(1,2,3))
+    union = (pred + target - pred*target).sum(dim=(1,2,3)).clamp_min(eps)
+    return (inter / union).mean()
+
+def calibrate_delta(renderer, R_gt, t_gt, K, M, image_size,
+                    flip_v=False, halfpx=-0.5, steps=200, lr=5e-2,
+                    use_scale=True, max_rot_deg=30):
     """
-    Optimize Δ = (RΔ, tΔ, s) to maximize IoU on GT masks across a small batch.
+    Optimize Δ = (RΔ, tΔ, s) so that render(R_gt·RΔ, s·t_gt + R_gt·(s·tΔ)) has
+    high IoU with GT mask M. Runs once; cache the result.
     """
-    device = R_gt.device
-    B = R_gt.size(0)
-    H, W = image_size
-    K_r = K.clone(); K_r[:,0,2] += halfpx; K_r[:,1,2] += halfpx
-    M = _ensure_nchw(M.float()); M = M/255.0 if M.max()>1.5 else M
-    M = _resize_to(M, (H, W))
+    with torch.enable_grad():  # ensure grads are on even if caller is in no_grad
+        device = R_gt.device
+        H, W = image_size
+        K_r = K.clone(); K_r[:,0,2] += halfpx; K_r[:,1,2] += halfpx
 
-    # Params: small rotation, translation in object frame, log-scale
-    rvec = torch.zeros(3, device=device, requires_grad=True)
-    tΔ   = torch.zeros(3, device=device, requires_grad=True)
-    log_s = torch.zeros(1, device=device, requires_grad=True) if use_scale else torch.zeros(1, device=device, requires_grad=False)
+        # constants (no grad)
+        M_f = M.float()
+        if M_f.max() > 1.5: M_f = M_f / 255.0
+        M_f = _resize_to(M_f, (H, W)).detach()  # treat GT mask as constant
 
-    opt = torch.optim.Adam([rvec, tΔ, log_s], lr=lr)
-    best = {'IoU': -1.0, 'r': None, 't': None, 's': None}
+        # parameters to learn
+        rvec  = torch.zeros(3, device=device, requires_grad=True)
+        tΔ    = torch.zeros(3, device=device, requires_grad=True)
+        log_s = torch.zeros(1, device=device, requires_grad=use_scale)
 
-    for it in range(steps):
-        opt.zero_grad()
-        s = torch.exp(log_s)[0] if use_scale else torch.tensor(1.0, device=device)
-        # limit rotation to ±max_rot_deg to keep it stable
-        r_clamped = rvec.clamp(-max_rot_deg*pi/180, max_rot_deg*pi/180)
-        RΔ = _rodrigues(r_clamped.unsqueeze(0))[0]   # (3,3)
+        opt = torch.optim.Adam([p for p in (rvec, tΔ, log_s) if p.requires_grad], lr=lr)
+        best = {'IoU': -1.0, 'r': None, 't': None, 's': 1.0}
 
-        Rr, tr = _compose_with_delta(R_gt, t_gt, RΔ, tΔ, s)
-        _, sil = renderer(Rr, tr, K_r, image_size=(H, W))
-        sil = _ensure_nchw(sil.float()).clamp(0,1)
-        if flip_v: sil = torch.flip(sil, [2])
-        sil = _resize_to(sil, (H, W))
+        for it in range(steps):
+            opt.zero_grad()
 
-        # IoU loss (maximize IoU => minimize 1-IoU)
-        A = (sil > 0.5).float(); Bm = (M > 0.5).float()
-        inter = (A*Bm).sum(dim=(1,2,3))
-        union = (A+Bm - A*Bm).sum(dim=(1,2,3)).clamp_min(1)
-        iou   = (inter/union).mean()
-        loss  = (1 - iou)
-        loss.backward()
-        opt.step()
+            s = torch.exp(log_s)[0] if use_scale else torch.tensor(1.0, device=device)
+            r_clamped = rvec.clamp(-max_rot_deg*pi/180, max_rot_deg*pi/180)
+            RΔ = _rodrigues(r_clamped.unsqueeze(0))[0]
 
-        if iou.item() > best['IoU']:
-            best = {'IoU': iou.item(), 'r': rvec.detach().clone(), 't': tΔ.detach().clone(), 's': float(torch.exp(log_s).item())}
+            Rr, tr = _compose_with_delta(R_gt, t_gt, RΔ, tΔ, s)
+            _, sil = renderer(Rr, tr, K_r, image_size=(H, W))
+            sil = sil if sil.ndim == 4 else sil.unsqueeze(1)
+            sil = sil.float().clamp(0,1)
+            if flip_v: sil = torch.flip(sil, [2])
 
-        if (it+1) % 50 == 0:
-            print(f"[Δcal] step {it+1}/{steps}  IoU={iou.item():.3f}  s={float(torch.exp(log_s).item()):.3f}  tΔ={tΔ.tolist()}  r={rvec.tolist()}")
+            # **soft** IoU for differentiability
+            iou = _soft_iou(sil, M_f)
+            loss = 1.0 - iou
+            loss.backward()
+            opt.step()
 
-    # finalize
-    RΔ_best = _rodrigues(best['r'].unsqueeze(0))[0].detach()
-    tΔ_best = best['t'].detach()
-    s_best  = best['s'] if use_scale else 1.0
-    print(f"[Δcal] BEST  IoU={best['IoU']:.3f}  s={s_best:.3f}  tΔ={tΔ_best.tolist()}")
-    return {'R': RΔ_best, 't': tΔ_best, 's': s_best}
+            if iou.item() > best['IoU']:
+                best = {'IoU': iou.item(),
+                        'r': rvec.detach().clone(),
+                        't': tΔ.detach().clone(),
+                        's': float(torch.exp(log_s).item()) if use_scale else 1.0}
+
+            # (optional) print every 50 iters
+            # if (it+1) % 50 == 0:
+            #     print(f"[Δcal] {it+1}/{steps}  IoU={iou.item():.3f}  s={best['s']:.3f}")
+
+        RΔ_best = _rodrigues(best['r'].unsqueeze(0))[0].detach()
+        tΔ_best = best['t'].detach()
+        s_best  = best['s']
+        print(f"[Δcal] BEST  IoU={best['IoU']:.3f}  s={s_best:.3f}  tΔ={tΔ_best.tolist()}")
+        return {'R': RΔ_best, 't': tΔ_best, 's': s_best}
 
 
 _ALIGN = None
-_TSCALE = None
 
 def pose_loss2(
     R_pred, t_pred, R_gt, t_gt, D_obj,
@@ -389,7 +394,7 @@ def pose_loss2(
     L_T = normalized_t_loss(t_pred, t_gt, D_obj)
 
     # ---------------- alignment probe (run once) ------
-    global _ALIGN, _TSCALE
+    global _ALIGN
 
     if _ALIGN is None:
         _ALIGN = probe_alignment(renderer, R_gt, t_gt, K, M, image_size)
@@ -410,11 +415,12 @@ def pose_loss2(
 
     K_r = K.clone(); K_r[:,0,2] += hpx; K_r[:,1,2] += hpx
     H, W = image_size
+    
     global _DELTA
     if _DELTA is None:
         _DELTA = calibrate_delta(
             renderer, Rr_gt, tr_gt, K_r, M, image_size=(H, W),
-            flip_v=flip, halfpx=hpx, steps=300, lr=5e-2, use_scale=True
+            flip_v=flip, halfpx=hpx, steps=200, lr=5e-2, use_scale=True
         )
 
     # --- NEW: units/scale probe (run once)
