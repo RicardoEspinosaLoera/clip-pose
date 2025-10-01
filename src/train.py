@@ -30,8 +30,8 @@ def save_or_log_overlay(I, I_comp, sil, M, out_dir, tag, step, to_wandb=False):
 
     grid = vutils.make_grid([
         I[0].detach().cpu(),
-        I_comp_r[0].detach().cpu(),
-        I_sil_r[0].detach().cpu(),
+        I_comp[0].detach().cpu(),
+        sil[0].detach().cpu(),
         M[0].detach().cpu().repeat(3,1,1)
     ], nrow=4, normalize=True, scale_each=True)
     #path = os.path.join(out_dir, f"{tag}_{step:06d}.png")
