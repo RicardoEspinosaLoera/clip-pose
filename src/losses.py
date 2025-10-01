@@ -412,20 +412,20 @@ def pose_loss2(
     # Blend: alpha=0 => all anchor (guaranteed visible), alpha=1 => all t_pred_render
     t_render = (1.0 - anchor_alpha) * t_anchor + anchor_alpha * t_pred_render"""
 
-    R_pred_w2c, t_pred_w2c = cam2obj_to_world2cam(R_pred, t_pred)
+    #R_pred_w2c, t_pred_w2c = cam2obj_to_world2cam(R_pred, t_pred)
     #R_gt_w2c,  t_gt_w2c    = cam2obj_to_world2cam(R_gt,  t_gt)
-    rgb_hat, sil_hat = renderer(R_pred_w2c, t_pred_w2c, K_use, image_size=(Hs,Ws))
+    rgb_hat, sil_hat = renderer(R_pred, t_pred, K_use, image_size=(Hs,Ws))
     # ---- differentiable render (Kaolin DIB-R) ----
     #rgb_hat, sil_hat = renderer(R_pred, t_render, K_use, image_size=(Hs, Ws))
     sil_hat = sil_hat.float().clamp(0,1)  # (B,1,Hs,Ws)
 
-    
+    """
     with torch.no_grad():
         # GT should be visible
         #Rgt_w2c, tgt_w2c = cam2obj_to_world2cam(R_gt, t_gt)  # or however you compose GT
         rgb_gt, sil_gt = renderer(R_gt, t_gt, K_use, image_size=(Hs,Ws))
         print("GT tz>0 ratio:", (t_gt[:,2] > 0).float().mean().item(),
-            " GT sil sum:", float(sil_gt.sum().item()))
+            " GT sil sum:", float(sil_gt.sum().item()))"""
     
 
     
