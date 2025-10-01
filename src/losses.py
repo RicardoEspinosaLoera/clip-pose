@@ -254,7 +254,7 @@ def _so3_angle(R1, R2, eps=1e-6):
     sin = (0.5 * torch.linalg.norm(v, dim=-1)).clamp(0, 1.0-eps)
     return torch.atan2(sin, cos)   # (B,)
 
-def rot_geodesic_loss(R_pred, R_gt, project=True, mode='chordal'):
+"""def rot_geodesic_loss(R_pred, R_gt, project=True, mode='chordal'):
     if project:
         R_pred = _project_to_so3(R_pred)
     if mode == 'geodesic':
@@ -263,7 +263,15 @@ def rot_geodesic_loss(R_pred, R_gt, project=True, mode='chordal'):
     Rt = torch.einsum('bij,bjk->bik', R_pred.transpose(1,2), R_gt)
     tr = Rt[:,0,0] + Rt[:,1,1] + Rt[:,2,2]
     cos = ((tr - 1.0) * 0.5).clamp(-0.999999, 0.999999)
-    return (1.0 - cos).mean()
+    return (1.0 - cos).mean()"""
+
+def rot_geodesic_loss(R_pred, R_gt, eps=1e-7): 
+    """Geodesic rotation loss in radians. R_*: (B,3,3)""" 
+    Rt = torch.einsum('bij,bjk->bik', R_pred.transpose(1,2), R_gt) 
+    # R_p^T R_g 
+    tr = Rt[:, 0,0] + Rt[:, 1,1] + Rt[:, 2,2] 
+    cos = ((tr - 1.0) * 0.5).clamp(-1.0 + eps, 1.0 - eps) 
+    return torch.acos(cos).mean()
 
 
 # ---------- rendering safety helpers ----------
@@ -323,32 +331,6 @@ def pose_loss2(
     L_R = rot_geodesic_loss(R_pred, R_gt)
     L_T = normalized_t_loss(t_pred, t_gt, D_obj)
 
-    # alignment probe (cached)
-    #global _ALIGN, _DELTA
-
-    #if _ALIGN is None:
-    #    _ALIGN = probe_alignment(renderer, R_gt, t_gt, K, M, image_size)
-    #inv, flip, hpx = _ALIGN['invert'], _ALIGN['flip_v'], _ALIGN['halfpx']
-
-    # extrinsics for rendering (don’t change what the numeric losses see)
-    #if inv:
-    #    Rr_pred = R_pred.transpose(1,2)
-    #    tr_pred = -torch.einsum('bij,bj->bi', Rr_pred, t_pred)
-    #    Rr_gt   = R_gt.transpose(1,2)
-    #    tr_gt   = -torch.einsum('bij,bj->bi', Rr_gt, t_gt)
-    #else:
-    #    Rr_pred, tr_pred = R_pred, t_pred
-    #    Rr_gt,   tr_gt   = R_gt,   t_gt
-
-    # calibrate Δ fast (cached)
-    #K_r = K.clone(); K_r[:,0,2] += hpx; K_r[:,1,2] += hpx
-    #if _DELTA is None:
-    #    _DELTA = calibrate_delta_fast(renderer, Rr_gt, tr_gt, K_r, M, image_size,
-    #                                  flip_v=flip, halfpx=hpx, D_obj=float(D_obj))
-    #RΔ, tΔ, sΔ = _DELTA['R'], _DELTA['t'], _DELTA['s']
-
-    #Rr_pred_s, tr_pred_s = _sanitize_t(R_pred, t_pred, z_min=z_min, z_max=z_max)
-    # render at training resolution (downsample for speed)
     H, W = image_size
     Hs, Ws = (H//mask_downsample, W//mask_downsample) if mask_downsample>1 else (H, W)
 
