@@ -347,7 +347,7 @@ def pose_loss2(
     #                                  flip_v=flip, halfpx=hpx, D_obj=float(D_obj))
     #RΔ, tΔ, sΔ = _DELTA['R'], _DELTA['t'], _DELTA['s']
 
-    Rr_pred_s, tr_pred_s = _sanitize_t(R_pred, t_pred, z_min=z_min, z_max=z_max)
+    #Rr_pred_s, tr_pred_s = _sanitize_t(R_pred, t_pred, z_min=z_min, z_max=z_max)
     # render at training resolution (downsample for speed)
     H, W = image_size
     Hs, Ws = (H//mask_downsample, W//mask_downsample) if mask_downsample>1 else (H, W)
@@ -356,8 +356,8 @@ def pose_loss2(
     BG_use = F.interpolate(BG.float(), size=(Hs, Ws), mode='bilinear', align_corners=False).clamp(0,1) if mask_downsample>1 else BG.float()
 
     #Rr_pred_eff, tr_pred_eff = _compose_with_delta(R_pred, t_pred, RΔ, tΔ, sΔ)
-    rgb_hat, sil_hat = _render_safe(renderer, Rr_pred_s, tr_pred_s, K, (Hs, Ws))
-    #rgb_hat, sil_hat = renderer(R_pred, t_pred, K, image_size=(Hs, Ws))
+    #rgb_hat, sil_hat = _render_safe(renderer, Rr_pred_s, tr_pred_s, K, (Hs, Ws))
+    rgb_hat, sil_hat = renderer(R_pred, t_pred, K, image_size=(Hs, Ws))
     sil_hat = _ensure_nchw(sil_hat).float().clamp(0,1)
     #if flip: sil_hat = torch.flip(sil_hat, [2])
 
