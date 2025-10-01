@@ -275,18 +275,18 @@ def pose_loss2(
     # --- total ---
     loss = λR*L_R + λt*L_T + λmask*L_mask
 
-    B, _, H, W = sil_hat.shape
+    B, _, H, W = sil_eff.shape
     img = torch.zeros(B, 3, H, W, device=sil_hat.device)  # black background
     overlay = overlay_mask_on_image(
-        img, sil_hat,
+        img, sil_eff,
         color=(1,1,1),   # white fill
         alpha=1.0,       # opaque
         hard=True,       # crisp edges like your sample
         thr=0.5
     )
 
-    I_comp = composite(rgb_hat, BG, sil_hat)
-    gt_pose_iou(rgb_hat, M_use, R_gt, t_gt, K, renderer)
+    I_comp = composite(rgb_hat, BG, sil_eff)
+    gt_pose_iou(rgb_hat, M_eff, R_gt, t_gt, K, renderer)
 
     logs = {
         'rot_rad': L_R.detach(),
