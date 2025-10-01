@@ -284,6 +284,9 @@ def probe_units_scale(renderer, R_gt, t_gt, K, M, image_size, flip_v=False, half
     print(f"[units] BEST scale s={best[1]}  IoU={best[0]:.3f}")
     return best[1] or 1.0
 
+_ALIGN = None
+_TSCALE = None
+
 def pose_loss2(
     R_pred, t_pred, R_gt, t_gt, D_obj,
     M, K, image_size, renderer, BG,
@@ -296,8 +299,8 @@ def pose_loss2(
     L_T = normalized_t_loss(t_pred, t_gt, D_obj)
 
     # ---------------- alignment probe (run once) ------
-    _ALIGN = None
-    _TSCALE = None
+    global _ALIGN, _TSCALE
+    
     if _ALIGN is None:
         _ALIGN = probe_alignment(renderer, R_gt, t_gt, K, M, image_size)
     inv  = _ALIGN['invert']
