@@ -308,6 +308,8 @@ def _render_safe(renderer, R, t, K, image_size, flip_v=False):
     rgb = rgb.float().clamp(0,1)
     return rgb, sil
 
+def normalized_t_loss(t_pred, t_gt, D_obj, eps=1e-8): 
+    return (torch.linalg.norm(t_pred - t_gt, dim=1) / (D_obj + eps)).mean()
 
 def pose_loss2(
     R_pred, t_pred, R_gt, t_gt, D_obj,
