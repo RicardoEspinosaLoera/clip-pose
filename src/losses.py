@@ -308,12 +308,9 @@ def _render_safe(renderer, R, t, K, image_size, flip_v=False):
     rgb = rgb.float().clamp(0,1)
     return rgb, sil
 
-def normalized_t_loss(t_pred, t_gt, D_obj=None, eps=1e-6):
-    # Both in meters; normalize by ||t_gt|| so the scale is tame
-    denom = torch.linalg.norm(t_gt, dim=1, keepdim=True).clamp_min(eps)
-    dt = (t_pred - t_gt) / denom
-    L = F.smooth_l1_loss(dt, torch.zeros_like(dt), beta=0.1, reduction='mean')
-    return torch.nan_to_num(L, nan=0.0, posinf=0.0, neginf=0.0)
+def normalized_t_loss(t_pred, t_gt, D_obj, eps=1e-8): 
+    return (torch.linalg.norm(t_pred - t_gt, dim=1) / (D_obj + eps)).mean()
+
 
 import torch
 import torch.nn.functional as F
