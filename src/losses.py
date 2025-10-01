@@ -396,12 +396,6 @@ def pose_loss2(
     flip = _ALIGN['flip_v']
     hpx  = _ALIGN['halfpx']
 
-    global _DELTA
-    if _DELTA is None:
-        _DELTA = calibrate_delta(
-            renderer, Rr_gt, tr_gt, K_r, M, image_size=(H, W),
-            flip_v=flip, halfpx=hpx, steps=300, lr=5e-2, use_scale=True
-        )
 
     # Prepare extrinsics for rendering only (do NOT change what pose losses see)
     if inv:
@@ -414,6 +408,13 @@ def pose_loss2(
         Rr_gt,   tr_gt   = R_gt,   t_gt
 
     K_r = K.clone(); K_r[:,0,2] += hpx; K_r[:,1,2] += hpx
+
+    global _DELTA
+    if _DELTA is None:
+        _DELTA = calibrate_delta(
+            renderer, Rr_gt, tr_gt, K_r, M, image_size=(H, W),
+            flip_v=flip, halfpx=hpx, steps=300, lr=5e-2, use_scale=True
+        )
 
     # --- NEW: units/scale probe (run once)
     if _TSCALE is None:
