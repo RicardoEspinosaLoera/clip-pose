@@ -171,7 +171,8 @@ def calibrate_delta_fast(renderer, R_gt, t_gt, K, M, image_size, flip_v=False, h
 
 
 # ---------- UPDATED pose_loss2 (uses fast calibration; optional visuals) ----------
-_ALIGN = None, _DELTA = None
+_ALIGN = None
+_DELTA = None
 
 def pose_loss2(
     R_pred, t_pred, R_gt, t_gt, D_obj,
