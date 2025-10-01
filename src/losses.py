@@ -191,7 +191,7 @@ def _sobel_grad(x):
     return torch.sqrt(gx*gx + gy*gy + 1e-8)
 
 @torch.no_grad()
-def gt_pose_iou(I, M, R_gt, t_gt, K):
+def gt_pose_iou(I, M, R_gt, t_gt, K, renderer):
     rgb_gt, sil_gt = renderer(R_gt, t_gt, K, image_size=I.shape[-2:])
     if sil_gt.ndim == 3: sil_gt = sil_gt.unsqueeze(1)
     sil_b = (sil_gt > 0.5).float()
@@ -286,7 +286,7 @@ def pose_loss2(
     )
 
     I_comp = composite(rgb_hat, BG, sil_hat)
-    gt_pose_iou(rgb_hat, M, R_gt, t_gt, K)
+    gt_pose_iou(rgb_hat, M, R_gt, t_gt, K, renderer)
 
     logs = {
         'rot_rad': L_R.detach(),
