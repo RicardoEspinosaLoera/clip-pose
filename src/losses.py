@@ -262,6 +262,27 @@ def gt_pose_iou(M, R_gt, t_gt, K, renderer, image_size):
         sil = F.interpolate(sil, size=(Hm,Wm), mode='bilinear', align_corners=False).clamp(0,1)
     return _iou_bin(sil, M)
 # ---------------------------------------------------------------------------
+@torch.no_grad()
+def probe_units_scale(renderer, R_gt, t_gt, K, M, image_size, flip_v=False, halfpx=-0.5):
+    M = _ensure_nchw(M).float();  M = M/255.0 if M.max()>1.5 else M
+    H, W = image_size
+    K_r = K.clone(); K_r[:,0,2] += halfpx; K_r[:,1,2] += halfpx
+
+    # Try orders of magnitude; refine once you see a peak
+    scales = [1e-3, 3e-3, 1e-2, 3e-2, 1e-1, 0.3, 1, 3, 10, 30, 100, 300, 1e3]
+    best = (0.0, None)
+    for s in scales:
+        _, sil = renderer(R_gt, t_gt * s, K_r, image_size=(H, W))
+        sil = _ensure_nchw(sil).float().clamp(0,1)
+        if flip_v: sil = torch.flip(sil, [2])
+        if sil.shape[-2:] != M.shape[-2:]:
+            sil = F.interpolate(sil, size=M.shape[-2:], mode='bilinear', align_corners=False).clamp(0,1)
+        iou = _iou_bin(sil, M)
+        print(f"[units] s={s:g}  IoU={iou:.3f}")
+        if iou > best[0]:
+            best = (iou, s)
+    print(f"[units] BEST scale s={best[1]}  IoU={best[0]:.3f}")
+    return best[1] or 1.0
 
 def pose_loss2(
     R_pred, t_pred, R_gt, t_gt, D_obj,
@@ -275,7 +296,8 @@ def pose_loss2(
     L_T = normalized_t_loss(t_pred, t_gt, D_obj)
 
     # ---------------- alignment probe (run once) ------
-    global _ALIGN
+    _ALIGN = None
+    _TSCALE = None
     if _ALIGN is None:
         _ALIGN = probe_alignment(renderer, R_gt, t_gt, K, M, image_size)
     inv  = _ALIGN['invert']
@@ -294,6 +316,11 @@ def pose_loss2(
 
     K_r = K.clone(); K_r[:,0,2] += hpx; K_r[:,1,2] += hpx
 
+    # --- NEW: units/scale probe (run once)
+    if _TSCALE is None:
+        _TSCALE = probe_units_scale(renderer, Rr_gt, tr_gt, K_r, M, image_size, flip_v=flip, halfpx=hpx)
+    s = _TSCALE
+
     # ---------------- silhouette term -----------------
     L_mask = torch.tensor(0., device=R_pred.device, dtype=L_R.dtype)
     bce_val = torch.tensor(0., device=R_pred.device)
@@ -307,7 +334,7 @@ def pose_loss2(
     M_use  = F.interpolate(M.float(),  size=(Hs, Ws), mode='bilinear', align_corners=False).clamp(0,1) if mask_downsample>1 else M.float()
     BG_use = F.interpolate(BG.float(), size=(Hs, Ws), mode='bilinear', align_corners=False).clamp(0,1) if mask_downsample>1 else BG.float()
 
-    rgb_hat, sil_hat = renderer(Rr_pred, tr_pred, K_r, image_size=(Hs, Ws))
+    rgb_hat, sil_hat = renderer(Rr_pred, tr_pred * s, K_r, image_size=(Hs, Ws))
     sil_hat = _ensure_nchw(sil_hat).float().clamp(0,1)
     if flip:
         sil_hat = torch.flip(sil_hat, [2])
