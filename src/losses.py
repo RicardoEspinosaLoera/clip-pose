@@ -245,7 +245,6 @@ def calibrate_delta_fast(renderer, R_gt, t_gt, K, M, image_size, flip_v=False, h
     return {'R': RΔ_best, 't': tΔ_best, 's': best['s']}
 
 
-# ---------- UPDATED pose_loss2 (uses fast calibration; optional visuals) ----------
 _ALIGN = None
 _DELTA = None
 
@@ -331,7 +330,7 @@ def pose_loss2(
     λR=0.5, λt=0.5,
     λmask=1.0, λbce=1.0, λdice=0.5, λedge=0.0,  # set λedge=0 for speed
     mask_downsample=2,
-    make_vis=False                              # turn off visuals to speed up
+    make_vis=True                              # turn off visuals to speed up
 ):
     # base pose losses (your originals)
     L_R = rot_geodesic_loss(R_pred, R_gt)
@@ -412,7 +411,7 @@ def pose_loss2(
     # Optional visuals (downsampled or upsample back if you want)
     I_comp  = composite(rgb_hat, BG_use, sil_eff)
     overlay = overlay_mask_on_image(BG_use, sil_eff, color=(0,1,0), alpha=0.6, outline_px=2)
-    overlay = overlay_mask_on_image(overlay, M_eff,  color=(1,0,0), alpha=0.6, outline_px=2)
+    #overlay = overlay_mask_on_image(overlay, M_eff,  color=(1,0,0), alpha=0.6, outline_px=2)
 
     I_comp  = F.interpolate(I_comp,  size=(H, W), mode='bilinear', align_corners=False).clamp(0,1) if mask_downsample>1 else I_comp
     overlay = F.interpolate(overlay, size=(H, W), mode='bilinear', align_corners=False).clamp(0,1) if mask_downsample>1 else overlay

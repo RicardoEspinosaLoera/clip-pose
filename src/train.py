@@ -210,28 +210,6 @@ def run_epoch(model, renderer, loader, device, cfg, P_obj, D_obj, verts, mode,
         r6, t_pred = model(I)
         R_pred = sixd_to_rotmat(r6)
         H, W = I.shape[-2], I.shape[-1]
-
-        #Rendering
-        #with torch.no_grad():
-        """
-        t_pred_render = t_pred.clone()
-        t_pred_render[:, 2] = torch.nn.functional.softplus(t_pred_render[:, 2]) + 1e-2  
-
-        # Compute an anchor t that guarantees the mesh is in-FOV for this R,K
-        t_anchor = fit_batch(renderer, R_pred.detach(), K, H, W, fill=fill)             
-
-        # Blend: early = mostly anchor (visible), later = network prediction
-        alpha = ramp_alpha(step, warmup=warmup, ramp=ramp)                               
-        t_fixed = (1.0 - alpha) * t_anchor + alpha * t_pred_render                       
-
-        #diagnose_visibility(renderer, R_pred, t_fixed, K, H, W)
-
-    
-        rgb, sil = renderer(R_pred, t_fixed, K, image_size=(H, W))
-        B, _, H, W = sil.shape
-        img = torch.zeros(B, 3, H, W, device=sil.device)  # black background
-
-        """
         
         loss, logs, I_comp, overlay = pose_loss2(R_pred, t_pred, R_gt, t_gt, D_obj, M, K, (H, W), renderer,BG, λR=0.5, λt=0.5, λmask=1.0, λbce=1.0, λdice=0.5, λedge=0.1, mask_downsample=2)
         
