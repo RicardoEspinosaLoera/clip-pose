@@ -316,7 +316,7 @@ def pose_loss2(
     M, K, image_size, renderer, BG,
     λR=0.5, λt=0.5,
     λmask=1.0, λbce=1.0, λdice=0.5, λedge=0.0,  # set λedge=0 for speed
-    mask_downsample=2,
+    mask_downsample=2,z_min=1e-2, z_max=None,
     make_vis=True                              # turn off visuals to speed up
 ):
     # base pose losses (your originals)
@@ -347,7 +347,7 @@ def pose_loss2(
     #                                  flip_v=flip, halfpx=hpx, D_obj=float(D_obj))
     #RΔ, tΔ, sΔ = _DELTA['R'], _DELTA['t'], _DELTA['s']
 
-    Rr_pred_s, tr_pred_s = _sanitize_t(Rr_pred, tr_pred, z_min=z_min, z_max=z_max)
+    Rr_pred_s, tr_pred_s = _sanitize_t(R_pred, t_pred, z_min=z_min, z_max=z_max)
     # render at training resolution (downsample for speed)
     H, W = image_size
     Hs, Ws = (H//mask_downsample, W//mask_downsample) if mask_downsample>1 else (H, W)
