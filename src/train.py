@@ -278,7 +278,7 @@ def run_epoch(model, renderer, loader, device, cfg, P_obj, D_obj, verts, mode,
             batch_Rdeg = float(ang_rad.mean().item() * 180.0 / np.pi)
 
             # normalized translation (mean over batch)
-            tn = torch.linalg.norm(t_pred - t_gt, dim=1) / (D_obj.to(device).view(-1) + 1e-8)
+            tn = torch.linalg.norm(t_pred - t_gt, dim=1) / (D_obj.view(-1, 1) + 1e-8)
             batch_Tn = float(tn.mean().item())
 
         bsz = I.size(0)
