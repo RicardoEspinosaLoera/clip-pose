@@ -389,7 +389,6 @@ def pose_loss2(
     L_R = rot_geodesic_loss(R_pred, R_gt)
     L_T = normalized_t_loss(t_pred, t_gt, D_obj)
 
-    print(R_pred[0])
     H, W = image_size
     Hs, Ws = (H//mask_downsample, W//mask_downsample) if mask_downsample>1 else (H, W)
 
