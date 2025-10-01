@@ -404,7 +404,7 @@ def pose_loss2(
     BG_use = F.interpolate(BG.float(), size=(Hs, Ws), mode='bilinear', align_corners=False).clamp(0,1) if mask_downsample>1 else BG.float()
 
     #Rr_pred_eff, tr_pred_eff = _compose_with_delta(R_pred, t_pred, RΔ, tΔ, sΔ)
-    rgb_hat, sil_hat = renderer(R_pred, tr_pred, K, image_size=(Hs, Ws))
+    rgb_hat, sil_hat = renderer(R_pred, t_pred, K, image_size=(Hs, Ws))
     sil_hat = _ensure_nchw(sil_hat).float().clamp(0,1)
     if flip: sil_hat = torch.flip(sil_hat, [2])
 
