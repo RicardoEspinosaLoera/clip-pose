@@ -255,14 +255,15 @@ def _so3_angle(R1, R2, eps=1e-6):
     sin = (0.5 * torch.linalg.norm(v, dim=-1)).clamp(0, 1.0-eps)
     return torch.atan2(sin, cos)   # (B,)
 
-def rot_geodesic_loss(R_pred, R_gt, eps=1e-7):
-    # optional: project to SO(3) if your head outputs aren't guaranteed orthonormal
-    # R_pred = _project_to_so3(R_pred)
-
+    
+def rot_geodesic_loss(R_pred, R_gt, project=True, eps=1e-7):
+    if project:
+        R_pred = project_to_so3(R_pred)
     Rt = torch.einsum('bij,bjk->bik', R_pred.transpose(1,2), R_gt)
-    tr = Rt[:, 0, 0] + Rt[:, 1, 1] + Rt[:, 2, 2]
+    tr = Rt[:,0,0] + Rt[:,1,1] + Rt[:,2,2]
     cos = ((tr - 1.0) * 0.5).clamp(-1.0 + eps, 1.0 - eps)
-    return torch.acos(cos).mean()
+    L = torch.acos(cos).mean()
+    return torch.nan_to_num(L, nan=0.0, posinf=0.0, neginf=0.0)
 
 
 # ---------- rendering safety helpers ----------
@@ -307,8 +308,12 @@ def _render_safe(renderer, R, t, K, image_size, flip_v=False):
     rgb = rgb.float().clamp(0,1)
     return rgb, sil
 
-def normalized_t_loss(t_pred, t_gt, D_obj, eps=1e-8): 
-    return (torch.linalg.norm(t_pred - t_gt, dim=1) / (D_obj + eps)).mean()
+def normalized_t_loss(t_pred, t_gt, D_obj=None, eps=1e-6):
+    # Both in meters; normalize by ||t_gt|| so the scale is tame
+    denom = torch.linalg.norm(t_gt, dim=1, keepdim=True).clamp_min(eps)
+    dt = (t_pred - t_gt) / denom
+    L = F.smooth_l1_loss(dt, torch.zeros_like(dt), beta=0.1, reduction='mean')
+    return torch.nan_to_num(L, nan=0.0, posinf=0.0, neginf=0.0)
 
 import torch
 import torch.nn.functional as F
