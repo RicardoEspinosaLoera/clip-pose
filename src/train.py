@@ -180,28 +180,15 @@ def rot_angles_rad(R_pred, R_gt, eps=1e-6):
     cos = ((tr - 1.0) * 0.5).clamp(-1 + eps, 1 - eps)
     return torch.acos(cos)  # (B,)
 
-import torch
 
-def project_to_so3(R: torch.Tensor) -> torch.Tensor:
-    """
-    Nearest-rotation (polar) projection. R: (B,3,3) -> (B,3,3) in SO(3).
-    Differentiable (through SVD).
-    """
-    # SVD
-    U, S, Vh = torch.linalg.svd(R)          # U @ Vh is orthogonal but det could be -1
-    Rhat = U @ Vh
-
-    # Build batched correction D = diag(1,1,sign), sign = +1 unless det(Rhat)<0
-    B = R.shape[0]
-    device, dtype = R.device, R.dtype
-
-    det = torch.det(Rhat)                   # (B,)
-    D = torch.eye(3, device=device, dtype=dtype).unsqueeze(0).repeat(B, 1, 1)  # (B,3,3)
-    D[:, 2, 2] = torch.where(det < 0, torch.tensor(-1.0, device=device, dtype=dtype),
-                                   torch.tensor( 1.0, device=device, dtype=dtype))
-
-    # Projected rotation
-    Rproj = U @ D @ Vh
+def project_to_so3(R):
+    # R: (B,3,3)
+    U, _, Vt = torch.linalg.svd(R)
+    Rproj = U @ Vt
+    # ensure det=+1 (proper rotation)
+    det = torch.det(Rproj).unsqueeze(-1).unsqueeze(-1)
+    fix = torch.diag_embed(Rproj.new_tensor([1., 1., -1.]))
+    Rproj = torch.where(det < 0, U @ fix @ Vt, Rproj)
     return Rproj
 
 

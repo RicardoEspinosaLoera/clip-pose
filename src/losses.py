@@ -235,14 +235,15 @@ def _so3_relative_angle(R1, R2, eps=1e-6):
     return torch.atan2(sin, cos)  # (B,) radians
 
 # ---------- stable rotation loss ----------
-def _project_to_so3(R):
+def project_to_so3(R):
+    # R: (B,3,3)
     U, _, Vt = torch.linalg.svd(R)
     Rproj = U @ Vt
+    # ensure det=+1 (proper rotation)
     det = torch.det(Rproj).unsqueeze(-1).unsqueeze(-1)
-    Vt_fix = torch.where(det < 0,
-                         torch.cat([Vt[..., :2, :], -Vt[..., 2:3, :]], dim=-2),
-                         Vt)
-    return U @ Vt_fix
+    fix = torch.diag_embed(Rproj.new_tensor([1., 1., -1.]))
+    Rproj = torch.where(det < 0, U @ fix @ Vt, Rproj)
+    return Rproj
 
 def _so3_angle(R1, R2, eps=1e-6):
     R = torch.einsum('bij,bjk->bik', R1.transpose(1,2), R2)
