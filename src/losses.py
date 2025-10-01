@@ -317,6 +317,7 @@ def _compose_with_delta(R, t, RΔ, tΔ, s):
     tr  = s*t + torch.einsum('bij,bj->bi', R, s*tΔB)
     return Rr, tr
 
+@torch.no_grad()
 def calibrate_delta(renderer, R_gt, t_gt, K, M, image_size, flip_v=False, halfpx=-0.5, 
                     steps=300, lr=5e-2, use_scale=True, max_rot_deg=30):
     """
