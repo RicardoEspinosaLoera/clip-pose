@@ -3,6 +3,7 @@ import math
 import torch
 import torch.nn.functional as F
 
+_RAD2DEG = 57.29577951308232
 
 def _ensure_nchw(x):
     if x.ndim == 2:                    # H,W
@@ -78,7 +79,7 @@ def overlay_mask_on_image(img, sil, color=(1,1,1), alpha=0.9, hard=False, outlin
     return img * (1.0 - a) + color_t * a
 
 
-_DELTA = None  # {'R':(3,3), 't':(3,), 's':float}
+#_DELTA = None  # {'R':(3,3), 't':(3,), 's':float}
 
 @torch.no_grad()
 def _downsize_hw(H, W, max_side=128, min_side=48):
@@ -105,12 +106,25 @@ def sample_mesh_points(verts, faces, n=1500):
     pts = f0 + u * (f1 - f0) + v * (f2 - f0)  # (n,3)
     return pts
 
-def rot_geodesic_loss(R_pred, R_gt, eps=1e-7): 
-    """Geodesic rotation loss in radians. R_*: (B,3,3)""" 
-    Rt = torch.einsum('bij,bjk->bik', R_pred.transpose(1,2), R_gt) # R_p^T R_g 
-    tr = Rt[:, 0,0] + Rt[:, 1,1] + Rt[:, 2,2] 
-    cos = ((tr - 1.0) * 0.5).clamp(-1.0 + eps, 1.0 - eps) 
-    return torch.acos(cos).mean()
+def rot_geodesic_loss(R_pred, R_gt, project=True, mode='chordal'):
+    """
+    R_pred, R_gt: (B,3,3)
+    project=True → project R_pred to SO(3) via SVD (robust)
+    mode:
+      'geodesic'  → mean θ (in radians)
+      'chordal'   → mean(1 - cosθ)  [smoother gradients near 0]
+    """
+    if project:
+        R_pred = _project_to_so3(R_pred)
+
+    theta = _so3_relative_angle(R_pred, R_gt)           # (B,)
+    if mode == 'geodesic':
+        return theta.mean()
+    # chordal uses cosθ from trace again (saves atan2 grad near π)
+    Rt = torch.einsum('bij,bjk->bik', R_pred.transpose(1,2), R_gt)
+    tr = Rt[:,0,0] + Rt[:,1,1] + Rt[:,2,2]
+    cos = ((tr - 1.0) * 0.5).clamp(-0.999999, 0.999999)
+    return (1.0 - cos).mean()
 
 def normalized_t_loss(t_pred, t_gt, D_obj, eps=1e-8): 
     return (torch.linalg.norm(t_pred - t_gt, dim=1) / (D_obj + eps)).mean()
@@ -245,8 +259,8 @@ def calibrate_delta_fast(renderer, R_gt, t_gt, K, M, image_size, flip_v=False, h
     return {'R': RΔ_best, 't': tΔ_best, 's': best['s']}
 
 
-_ALIGN = None
-_DELTA = None
+#_ALIGN = None
+#_DELTA = None
 
 @torch.no_grad()
 def _ensure_nchw(x):
@@ -324,6 +338,28 @@ def _sobel_grad(x): # x: (B,1,H,W)
     gy = F.conv2d(x, ky, padding=1) 
     return torch.sqrt(gx*gx + gy*gy + 1e-8)
 
+def _project_to_so3(R):
+    # R: (B,3,3) possibly off-manifold → closest proper rotation
+    U, _, Vt = torch.linalg.svd(R)
+    Rproj = U @ Vt
+    # enforce det=+1
+    det = torch.det(Rproj).unsqueeze(-1).unsqueeze(-1)  # (B,1,1)
+    Vt_fix = torch.where(det < 0,
+                         torch.cat([Vt[..., :2, :], -Vt[..., 2:3, :]], dim=-2),
+                         Vt)
+    return U @ Vt_fix
+
+def _so3_relative_angle(R1, R2, eps=1e-6):
+    # θ = atan2(||vee(R)^skew||/2, (tr(R)−1)/2), where R = R1^T R2
+    R = torch.einsum('bij,bjk->bik', R1.transpose(1,2), R2)
+    tr = R[:, 0,0] + R[:, 1,1] + R[:, 2,2]
+    cos = ((tr - 1.0) * 0.5).clamp(-1.0 + eps, 1.0 - eps)
+    v = torch.stack([R[:,2,1]-R[:,1,2],
+                     R[:,0,2]-R[:,2,0],
+                     R[:,1,0]-R[:,0,1]], dim=-1)  # (B,3)
+    sin = (0.5 * torch.linalg.norm(v, dim=-1)).clamp(0, 1.0 - eps)
+    return torch.atan2(sin, cos)  # (B,) radians
+
 def pose_loss2(
     R_pred, t_pred, R_gt, t_gt, D_obj,
     M, K, image_size, renderer, BG,
@@ -337,28 +373,28 @@ def pose_loss2(
     L_T = normalized_t_loss(t_pred, t_gt, D_obj)
 
     # alignment probe (cached)
-    global _ALIGN, _DELTA
+    #global _ALIGN, _DELTA
 
-    if _ALIGN is None:
-        _ALIGN = probe_alignment(renderer, R_gt, t_gt, K, M, image_size)
-    inv, flip, hpx = _ALIGN['invert'], _ALIGN['flip_v'], _ALIGN['halfpx']
+    #if _ALIGN is None:
+    #    _ALIGN = probe_alignment(renderer, R_gt, t_gt, K, M, image_size)
+    #inv, flip, hpx = _ALIGN['invert'], _ALIGN['flip_v'], _ALIGN['halfpx']
 
     # extrinsics for rendering (don’t change what the numeric losses see)
-    if inv:
-        Rr_pred = R_pred.transpose(1,2)
-        tr_pred = -torch.einsum('bij,bj->bi', Rr_pred, t_pred)
-        Rr_gt   = R_gt.transpose(1,2)
-        tr_gt   = -torch.einsum('bij,bj->bi', Rr_gt, t_gt)
-    else:
-        Rr_pred, tr_pred = R_pred, t_pred
-        Rr_gt,   tr_gt   = R_gt,   t_gt
+    #if inv:
+    #    Rr_pred = R_pred.transpose(1,2)
+    #    tr_pred = -torch.einsum('bij,bj->bi', Rr_pred, t_pred)
+    #    Rr_gt   = R_gt.transpose(1,2)
+    #    tr_gt   = -torch.einsum('bij,bj->bi', Rr_gt, t_gt)
+    #else:
+    #    Rr_pred, tr_pred = R_pred, t_pred
+    #    Rr_gt,   tr_gt   = R_gt,   t_gt
 
     # calibrate Δ fast (cached)
-    K_r = K.clone(); K_r[:,0,2] += hpx; K_r[:,1,2] += hpx
-    if _DELTA is None:
-        _DELTA = calibrate_delta_fast(renderer, Rr_gt, tr_gt, K_r, M, image_size,
-                                      flip_v=flip, halfpx=hpx, D_obj=float(D_obj))
-    RΔ, tΔ, sΔ = _DELTA['R'], _DELTA['t'], _DELTA['s']
+    #K_r = K.clone(); K_r[:,0,2] += hpx; K_r[:,1,2] += hpx
+    #if _DELTA is None:
+    #    _DELTA = calibrate_delta_fast(renderer, Rr_gt, tr_gt, K_r, M, image_size,
+    #                                  flip_v=flip, halfpx=hpx, D_obj=float(D_obj))
+    #RΔ, tΔ, sΔ = _DELTA['R'], _DELTA['t'], _DELTA['s']
 
     # render at training resolution (downsample for speed)
     H, W = image_size
