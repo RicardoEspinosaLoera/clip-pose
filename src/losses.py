@@ -417,9 +417,9 @@ def pose_loss2(
         )
 
     # --- NEW: units/scale probe (run once)
-    if _TSCALE is None:
-        _TSCALE = probe_units_scale(renderer, Rr_gt, tr_gt, K_r, M, image_size, flip_v=flip, halfpx=hpx)
-    s = _TSCALE
+    #if _TSCALE is None:
+    #    _TSCALE = probe_units_scale(renderer, Rr_gt, tr_gt, K_r, M, image_size, flip_v=flip, halfpx=hpx)
+    #s = _TSCALE
 
     # ---------------- silhouette term -----------------
     L_mask = torch.tensor(0., device=R_pred.device, dtype=L_R.dtype)
