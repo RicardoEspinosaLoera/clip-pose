@@ -3,6 +3,81 @@ import math
 import torch
 import torch.nn.functional as F
 
+
+def _ensure_nchw(x):
+    if x.ndim == 2:                    # H,W
+        x = x[None, None, ...]
+    elif x.ndim == 3:
+        if x.shape[0] in (1,3):        # C,H,W
+            x = x[None, ...]
+        elif x.shape[-1] in (1,3):     # H,W,C
+            x = x.permute(2,0,1).unsqueeze(0)
+        else:
+            raise ValueError(f"Unknown 3D shape {x.shape}")
+    elif x.ndim == 4 and x.shape[-1] in (1,3):  # B,H,W,C
+        x = x.permute(0,3,1,2)
+    if x.ndim != 4:
+        raise ValueError(f"Expected NCHW, got {x.shape}")
+    return x
+
+@torch.no_grad()
+def composite(rgb, bg, sil):
+    """
+    rgb: rendered clip (B,3,Hr,Wr) in [0,1]
+    bg:  your real image (B,3,H,W) in [0,1]
+    sil: silhouette alpha (B,1,*,*) in [0,1] or {0,255}
+    returns: (B,3,H,W)
+    """
+    rgb = _ensure_nchw(rgb).float().clamp(0,1)
+    bg  = _ensure_nchw(bg).float().clamp(0,1)
+    sil = _ensure_nchw(sil).float()
+    if sil.shape[1] != 1:   # keep 1-channel alpha
+        sil = sil[:, :1, ...]
+    if sil.max() > 1.5:     # 0/255 → 0/1
+        sil = sil / 255.0
+
+    H, W = bg.shape[-2:]
+    if rgb.shape[-2:] != (H, W):
+        rgb = F.interpolate(rgb, size=(H, W), mode='bilinear', align_corners=False)
+    if sil.shape[-2:] != (H, W):
+        sil = F.interpolate(sil, size=(H, W), mode='bilinear', align_corners=False).clamp(0,1)
+
+    # stats (debug)
+    smin, sme, smax = sil.min().item(), sil.mean().item(), sil.max().item()
+    r_in  = rgb[sil.expand_as(rgb) > 0.5].mean().item() if (sil > 0.5).any() else float('nan')
+    print(f"[composite] sil min/mean/max: {smin:.4f}/{sme:.4f}/{smax:.4f} | rgb_mean_inside: {r_in:.4f}")
+
+    return sil * rgb + (1.0 - sil) * bg
+
+@torch.no_grad()
+def overlay_mask_on_image(img, sil, color=(1,1,1), alpha=0.9, hard=False, outline_px=0, thr=0.5):
+    img = _ensure_nchw(img).float().clamp(0,1)
+    sil = _ensure_nchw(sil).float()
+    if sil.shape[1] != 1: sil = sil[:, :1, ...]
+    if sil.max() > 1.5: sil = sil/255.0
+    H, W = img.shape[-2:]
+    if sil.shape[-2:] != (H, W):
+        sil = F.interpolate(sil, size=(H, W), mode='bilinear', align_corners=False).clamp(0,1)
+
+    if hard:
+        m = (sil > thr).float()
+    else:
+        m = sil.clamp(0,1)
+
+    B = img.size(0)
+    color_t = torch.tensor(color, dtype=img.dtype, device=img.device).view(1,3,1,1).expand(B,-1,H,W)
+
+    if outline_px > 0:
+        k = outline_px
+        dil = F.max_pool2d(m, kernel_size=2*k+1, stride=1, padding=k)
+        ero = -F.max_pool2d(-m, kernel_size=2*k+1, stride=1, padding=k)
+        edge = (dil - ero > 1e-3).float()
+        return torch.where(edge>0, color_t, img)
+
+    a = (alpha * m).expand(-1,3,-1,-1)
+    return img * (1.0 - a) + color_t * a
+
+
 _DELTA = None  # {'R':(3,3), 't':(3,), 's':float}
 
 @torch.no_grad()
@@ -230,6 +305,24 @@ def gt_pose_iou(M, R_gt, t_gt, K, renderer, image_size):
         sil = F.interpolate(sil, size=(Hm,Wm), mode='bilinear', align_corners=False).clamp(0,1)
     return _iou_bin(sil, M)
 # ---------------------------------------------------------------------------
+def _dice_loss(p, g, eps=1e-6): 
+    # p,g: (B,1,H,W) in [0,1] 
+    inter = (p * g).sum(dim=(1,2,3)) 
+    denom = (p + g).sum(dim=(1,2,3)) 
+    dice = 1. - (2*inter + eps) / (denom + eps) 
+    return dice.mean() 
+    
+def _iou_loss(p, g, eps=1e-6): 
+    inter = (p * g).sum(dim=(1,2,3)) 
+    union = (p + g - p*g).sum(dim=(1,2,3)) 
+    iou = 1. - (inter + eps) / (union + eps) 
+    return iou.mean()
+
+def _sobel_grad(x): # x: (B,1,H,W) 
+    kx = torch.tensor([[-1.,0.,1.], [-2.,0.,2.], [-1.,0.,1.]], device=x.device, dtype=x.dtype).view(1,1,3,3) 
+    ky = torch.tensor([[-1.,-2.,-1.], [ 0., 0., 0.], [ 1., 2., 1.]], device=x.device, dtype=x.dtype).view(1,1,3,3) 
+    gx = F.conv2d(x, kx, padding=1) gy = F.conv2d(x, ky, padding=1) 
+    return torch.sqrt(gx*gx + gy*gy + 1e-8)
 
 def pose_loss2(
     R_pred, t_pred, R_gt, t_gt, D_obj,
