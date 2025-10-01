@@ -1,7 +1,7 @@
 import torch, torch.nn as nn
 import torchvision.models as tv
 import torch.nn.functional as F
-from .camera import sixd_to_rotmat
+
 
 class Regressor(nn.Module):
     def __init__(self, pretrained=True):
