@@ -406,7 +406,7 @@ def pose_loss2(
     #Rr_pred_eff, tr_pred_eff = _compose_with_delta(R_pred, t_pred, RΔ, tΔ, sΔ)
     rgb_hat, sil_hat = renderer(R_pred, t_pred, K, image_size=(Hs, Ws))
     sil_hat = _ensure_nchw(sil_hat).float().clamp(0,1)
-    if flip: sil_hat = torch.flip(sil_hat, [2])
+    #if flip: sil_hat = torch.flip(sil_hat, [2])
 
     # silhouette loss
     L_mask = torch.tensor(0., device=R_pred.device, dtype=L_R.dtype)
