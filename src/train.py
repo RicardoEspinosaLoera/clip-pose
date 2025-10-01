@@ -231,7 +231,7 @@ def run_epoch(model, renderer, loader, device, cfg, P_obj, D_obj, verts, mode,
         K  = batch['K'].to(device)
         M  = batch['mask'].to(device)
 
-        r6, t_pred = model(I, D_obj=D_obj.to(device))
+        r6, t_pred = model(I, D_obj=D_obj)
         R_pred = sixd_to_rotmat(r6)
         #R_pred = project_to_so3(R_pred) 
         #R_gt = sixd_to_rotmat(R_gt)
