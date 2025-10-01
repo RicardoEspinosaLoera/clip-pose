@@ -106,28 +106,6 @@ def sample_mesh_points(verts, faces, n=1500):
     pts = f0 + u * (f1 - f0) + v * (f2 - f0)  # (n,3)
     return pts
 
-def rot_geodesic_loss(R_pred, R_gt, project=True, mode='chordal'):
-    """
-    R_pred, R_gt: (B,3,3)
-    project=True → project R_pred to SO(3) via SVD (robust)
-    mode:
-      'geodesic'  → mean θ (in radians)
-      'chordal'   → mean(1 - cosθ)  [smoother gradients near 0]
-    """
-    if project:
-        R_pred = _project_to_so3(R_pred)
-
-    theta = _so3_relative_angle(R_pred, R_gt)           # (B,)
-    if mode == 'geodesic':
-        return theta.mean()
-    # chordal uses cosθ from trace again (saves atan2 grad near π)
-    Rt = torch.einsum('bij,bjk->bik', R_pred.transpose(1,2), R_gt)
-    tr = Rt[:,0,0] + Rt[:,1,1] + Rt[:,2,2]
-    cos = ((tr - 1.0) * 0.5).clamp(-0.999999, 0.999999)
-    return (1.0 - cos).mean()
-
-def normalized_t_loss(t_pred, t_gt, D_obj, eps=1e-8): 
-    return (torch.linalg.norm(t_pred - t_gt, dim=1) / (D_obj + eps)).mean()
 
 @torch.no_grad()
 def _rodrigues_from_euler(yaw_deg, pitch_deg, roll_deg, device, dtype):
@@ -167,100 +145,6 @@ def _render_iou(renderer, R, t, K, M_ref, image_size, flip_v=False):
     inter = (A*B).sum(dim=(1,2,3))
     union = (A+B - A*B).sum(dim=(1,2,3)).clamp_min(1)
     return (inter/union).mean().item()
-
-@torch.no_grad()
-def calibrate_delta_fast(renderer, R_gt, t_gt, K, M, image_size, flip_v=False, halfpx=-0.5, D_obj=1.0):
-    """
-    Fast, low-res coordinate search for Δ=(RΔ,tΔ,s).
-    Returns dict with 'R','t','s'. Runs ONCE; cache globally.
-    """
-    device, dtype = R_gt.device, R_gt.dtype
-    H, W = image_size
-    # downsize everything for calibration (keeps aspect)
-    h, w = _downsize_hw(H, W, max_side=128, min_side=48)
-    K_r = K.clone()
-    K_r[:,0,2] += halfpx; K_r[:,1,2] += halfpx
-    M_ref = _ensure_nchw(M.float())
-    if M_ref.max() > 1.5: M_ref = M_ref/255.0
-    M_ref = F.interpolate(M_ref, size=(h,w), mode='bilinear', align_corners=False).clamp(0,1)
-
-    # init
-    best = {'IoU': -1.0, 'yaw':0.0, 'pitch':0.0, 'roll':0.0,
-            'tx':0.0, 'ty':0.0, 'tz':0.0, 's':1.0}
-
-    # 0) quick scale sweep
-    scale_candidates = [0.5, 0.75, 1.0, 1.5, 2.0, 3.0]
-    for s in scale_candidates:
-        RΔ = torch.eye(3, device=device, dtype=dtype)
-        tΔ = torch.tensor([0.,0.,0.], device=device, dtype=dtype)
-        Rr, tr = _compose_with_delta(R_gt, t_gt, RΔ, tΔ, s)
-        iou = _render_iou(renderer, Rr, tr, K_r, M_ref, image_size=(h,w), flip_v=flip_v)
-        if iou > best['IoU']:
-            best.update({'IoU':iou, 's':s})
-
-    # 1) coordinate descent (few passes, small grids)
-    rot_steps = [30.0, 15.0, 7.5]          # degrees
-    trans_steps = [0.25, 0.10, 0.05]       # fractions of D_obj along object axes
-    improve_eps = 1e-3
-
-    for pass_id in range(2):  # two coarse-to-fine passes
-        improved = False
-
-        # rotations
-        for step in rot_steps:
-            for axis, key in zip([(0,0,1),(0,1,0),(1,0,0)], ['yaw','pitch','roll']):
-                best_local = (best['IoU'], best[key])
-                for delta in (-step, 0.0, step):
-                    yaw,pitch,roll = best['yaw'],best['pitch'],best['roll']
-                    if key=='yaw':   yaw += delta
-                    if key=='pitch': pitch += delta
-                    if key=='roll':  roll += delta
-                    RΔ = _rodrigues_from_euler(yaw, pitch, roll, device, dtype)
-                    tΔ = torch.tensor([best['tx'],best['ty'],best['tz']], device=device, dtype=dtype)
-                    Rr, tr = _compose_with_delta(R_gt, t_gt, RΔ, tΔ, best['s'])
-                    iou = _render_iou(renderer, Rr, tr, K_r, M_ref, image_size=(h,w), flip_v=flip_v)
-                    if iou > best['IoU'] + improve_eps:
-                        best.update({'IoU':iou,'yaw':yaw,'pitch':pitch,'roll':roll})
-                        improved = True
-                # slight early stop per-axis
-                if best['IoU'] > best_local[0] + improve_eps:
-                    continue
-
-        # translations
-        for frac in trans_steps:
-            step = frac * float(D_obj)
-            for axis_i, key in enumerate(['tx','ty','tz']):
-                best_local = (best['IoU'], best[key])
-                for delta in (-step, 0.0, step):
-                    tx,ty,tz = best['tx'],best['ty'],best['tz']
-                    if key=='tx': tx += delta
-                    if key=='ty': ty += delta
-                    if key=='tz': tz += delta
-                    RΔ = _rodrigues_from_euler(best['yaw'], best['pitch'], best['roll'], device, dtype)
-                    tΔ = torch.tensor([tx,ty,tz], device=device, dtype=dtype)
-                    Rr, tr = _compose_with_delta(R_gt, t_gt, RΔ, tΔ, best['s'])
-                    iou = _render_iou(renderer, Rr, tr, K_r, M_ref, image_size=(h,w), flip_v=flip_v)
-                    if iou > best['IoU'] + improve_eps:
-                        best.update({'IoU':iou,'tx':tx,'ty':ty,'tz':tz})
-                        improved = True
-                if best['IoU'] > best_local[0] + improve_eps:
-                    continue
-
-        if not improved:
-            break  # converged
-
-    print(f"[Δcal-fast] IoU={best['IoU']:.3f}  s={best['s']:.3f}  "
-          f"rpy=({best['roll']:.1f},{best['pitch']:.1f},{best['yaw']:.1f})  "
-          f"tΔ=({best['tx']:.3f},{best['ty']:.3f},{best['tz']:.3f})")
-
-    # pack
-    RΔ_best = _rodrigues_from_euler(best['yaw'], best['pitch'], best['roll'], device, dtype)
-    tΔ_best = torch.tensor([best['tx'],best['ty'],best['tz']], device=device, dtype=dtype)
-    return {'R': RΔ_best, 't': tΔ_best, 's': best['s']}
-
-
-#_ALIGN = None
-#_DELTA = None
 
 @torch.no_grad()
 def _ensure_nchw(x):
@@ -338,16 +222,6 @@ def _sobel_grad(x): # x: (B,1,H,W)
     gy = F.conv2d(x, ky, padding=1) 
     return torch.sqrt(gx*gx + gy*gy + 1e-8)
 
-def _project_to_so3(R):
-    # R: (B,3,3) possibly off-manifold → closest proper rotation
-    U, _, Vt = torch.linalg.svd(R)
-    Rproj = U @ Vt
-    # enforce det=+1
-    det = torch.det(Rproj).unsqueeze(-1).unsqueeze(-1)  # (B,1,1)
-    Vt_fix = torch.where(det < 0,
-                         torch.cat([Vt[..., :2, :], -Vt[..., 2:3, :]], dim=-2),
-                         Vt)
-    return U @ Vt_fix
 
 def _so3_relative_angle(R1, R2, eps=1e-6):
     # θ = atan2(||vee(R)^skew||/2, (tr(R)−1)/2), where R = R1^T R2
@@ -359,6 +233,81 @@ def _so3_relative_angle(R1, R2, eps=1e-6):
                      R[:,1,0]-R[:,0,1]], dim=-1)  # (B,3)
     sin = (0.5 * torch.linalg.norm(v, dim=-1)).clamp(0, 1.0 - eps)
     return torch.atan2(sin, cos)  # (B,) radians
+
+# ---------- stable rotation loss ----------
+def _project_to_so3(R):
+    U, _, Vt = torch.linalg.svd(R)
+    Rproj = U @ Vt
+    det = torch.det(Rproj).unsqueeze(-1).unsqueeze(-1)
+    Vt_fix = torch.where(det < 0,
+                         torch.cat([Vt[..., :2, :], -Vt[..., 2:3, :]], dim=-2),
+                         Vt)
+    return U @ Vt_fix
+
+def _so3_angle(R1, R2, eps=1e-6):
+    R = torch.einsum('bij,bjk->bik', R1.transpose(1,2), R2)
+    tr = R[:,0,0] + R[:,1,1] + R[:,2,2]
+    cos = ((tr - 1.0) * 0.5).clamp(-1.0+eps, 1.0-eps)
+    v = torch.stack([R[:,2,1]-R[:,1,2],
+                     R[:,0,2]-R[:,2,0],
+                     R[:,1,0]-R[:,0,1]], dim=-1)
+    sin = (0.5 * torch.linalg.norm(v, dim=-1)).clamp(0, 1.0-eps)
+    return torch.atan2(sin, cos)   # (B,)
+
+def rot_geodesic_loss(R_pred, R_gt, project=True, mode='chordal'):
+    if project:
+        R_pred = _project_to_so3(R_pred)
+    if mode == 'geodesic':
+        return _so3_angle(R_pred, R_gt).mean()
+    # chordal = 1 - cosθ
+    Rt = torch.einsum('bij,bjk->bik', R_pred.transpose(1,2), R_gt)
+    tr = Rt[:,0,0] + Rt[:,1,1] + Rt[:,2,2]
+    cos = ((tr - 1.0) * 0.5).clamp(-0.999999, 0.999999)
+    return (1.0 - cos).mean()
+
+
+# ---------- rendering safety helpers ----------
+@torch.no_grad()
+def _sanitize_t(R, t, z_min=1e-2, z_max=None):
+    t = t.clone()
+    t[:, 2] = torch.nn.functional.softplus(t[:, 2]) + z_min  # force z>0
+    if z_max is not None:
+        t[:, 2] = torch.clamp(t[:, 2], max=z_max)
+    return R, t
+
+@torch.no_grad()
+def _apply_alignment(R, t, K, align):
+    """Apply cached alignment tweaks for rendering only."""
+    inv, flip, hpx = align['invert'], align['flip_v'], align['halfpx']
+    if inv:
+        Rr = R.transpose(1,2)
+        tr = -torch.einsum('bij,bj->bi', Rr, t)
+    else:
+        Rr, tr = R, t
+    K_r = K.clone()
+    K_r[:,0,2] += hpx; K_r[:,1,2] += hpx
+    return Rr, tr, K_r, flip
+
+@torch.no_grad()
+def _render_safe(renderer, R, t, K, image_size, flip_v=False):
+    """Never crash: return zeros if Kaolin fails."""
+    Hs, Ws = image_size
+    B = R.shape[0]
+    try:
+        rgb, sil = renderer(R, t, K, image_size=(Hs, Ws))
+    except Exception as e:
+        device = R.device
+        print(f"[render-safe] fallback: {type(e).__name__}: {e}")
+        rgb = torch.zeros(B, 3, Hs, Ws, device=device)
+        sil = torch.zeros(B, 1, Hs, Ws, device=device)
+        return rgb, sil
+    sil = sil if sil.ndim == 4 else sil.unsqueeze(1)
+    sil = sil.float().clamp(0,1)
+    if flip_v:
+        sil = torch.flip(sil, [2])
+    rgb = rgb.float().clamp(0,1)
+    return rgb, sil
+
 
 def pose_loss2(
     R_pred, t_pred, R_gt, t_gt, D_obj,
@@ -396,6 +345,7 @@ def pose_loss2(
     #                                  flip_v=flip, halfpx=hpx, D_obj=float(D_obj))
     #RΔ, tΔ, sΔ = _DELTA['R'], _DELTA['t'], _DELTA['s']
 
+    Rr_pred_s, tr_pred_s = _sanitize_t(Rr_pred, tr_pred, z_min=z_min, z_max=z_max)
     # render at training resolution (downsample for speed)
     H, W = image_size
     Hs, Ws = (H//mask_downsample, W//mask_downsample) if mask_downsample>1 else (H, W)
@@ -404,7 +354,8 @@ def pose_loss2(
     BG_use = F.interpolate(BG.float(), size=(Hs, Ws), mode='bilinear', align_corners=False).clamp(0,1) if mask_downsample>1 else BG.float()
 
     #Rr_pred_eff, tr_pred_eff = _compose_with_delta(R_pred, t_pred, RΔ, tΔ, sΔ)
-    rgb_hat, sil_hat = renderer(R_pred, t_pred, K, image_size=(Hs, Ws))
+    rgb_hat, sil_hat = _render_safe(renderer, Rr_pred_eff, tr_pred_eff, K_r, (Hs, Ws), flip_v=flip)
+    #rgb_hat, sil_hat = renderer(R_pred, t_pred, K, image_size=(Hs, Ws))
     sil_hat = _ensure_nchw(sil_hat).float().clamp(0,1)
     #if flip: sil_hat = torch.flip(sil_hat, [2])
 
