@@ -174,6 +174,145 @@ def calibrate_delta_fast(renderer, R_gt, t_gt, K, M, image_size, flip_v=False, h
 _ALIGN = None
 _DELTA = None
 
+@torch.no_grad()
+def _ensure_nchw(x):
+    if x.ndim == 2: x = x[None,None,...]
+    elif x.ndim == 3:
+        if x.shape[0] in (1,3): x = x[None,...]
+        elif x.shape[-1] in (1,3): x = x.permute(2,0,1).unsqueeze(0)
+    elif x.ndim == 4 and x.shape[-1] in (1,3): x = x.permute(0,3,1,2)
+    return x
+
+@torch.no_grad()
+def _iou_bin(A, B, thr=0.5):
+    A = (A > thr).float(); B = (B > thr).float()
+    inter = (A*B).sum(dim=(1,2,3))
+    union = (A+B - A*B).sum(dim=(1,2,3)).clamp_min(1)
+    return (inter/union).mean().item()
+
+@torch.no_grad()
+def probe_alignment(renderer, R_gt, t_gt, K, M, image_size):
+    """Try invert/flip_v/halfpx and cache best settings."""
+    M = _ensure_nchw(M).float();  M = M/255.0 if M.max()>1.5 else M
+    Hm, Wm = M.shape[-2:]
+    results = []
+    for invert in (False, True):
+        if invert:
+            R_ = R_gt.transpose(1,2)
+            t_ = -torch.einsum('bij,bj->bi', R_, t_gt)  # inverse extrinsics
+        else:
+            R_, t_ = R_gt, t_gt
+        for halfpx in (0.0, -0.5):
+            K_ = K.clone()
+            K_[:,0,2] += halfpx; K_[:,1,2] += halfpx
+            _, sil = renderer(R_, t_, K_, image_size=image_size)
+            sil = _ensure_nchw(sil).float().clamp(0,1)
+            if sil.shape[-2:] != (Hm, Wm):
+                sil = F.interpolate(sil, size=(Hm, Wm), mode='bilinear', align_corners=False).clamp(0,1)
+            for flip_v in (False, True):
+                sil2 = torch.flip(sil, [2]) if flip_v else sil
+                iou = _iou_bin(sil2, M)
+                results.append({'invert':invert, 'halfpx':halfpx, 'flip_v':flip_v, 'IoU':iou})
+    best = max(results, key=lambda d: d['IoU'])
+    print(f"[probe] BEST → invert={best['invert']} halfpx={best['halfpx']} flip_v={best['flip_v']}  IoU={best['IoU']:.3f}")
+    return {'invert':best['invert'], 'halfpx':best['halfpx'], 'flip_v':best['flip_v']}
+
+@torch.no_grad()
+def gt_pose_iou(M, R_gt, t_gt, K, renderer, image_size):
+    """Render at image_size, resize to mask size, compare IoU."""
+    M = _ensure_nchw(M).float();  M = M/255.0 if M.max()>1.5 else M
+    Hm, Wm = M.shape[-2:]
+    _, sil = renderer(R_gt, t_gt, K, image_size=image_size)
+    sil = _ensure_nchw(sil).float().clamp(0,1)
+    if sil.shape[-2:] != (image_size[0], image_size[1]):
+        sil = F.interpolate(sil, size=image_size, mode='bilinear', align_corners=False).clamp(0,1)
+    if sil.shape[-2:] != (Hm, Wm):
+        sil = F.interpolate(sil, size=(Hm,Wm), mode='bilinear', align_corners=False).clamp(0,1)
+    return _iou_bin(sil, M)
+# ---------------------------------------------------------------------------
+
+def pose_loss2(
+    R_pred, t_pred, R_gt, t_gt, D_obj,
+    M, K, image_size, renderer, BG,
+    λR=0.5, λt=0.5,
+    λmask=1.0, λbce=1.0, λdice=0.5, λedge=0.1,
+    mask_downsample=1
+):
+    # ---------------- base pose losses ----------------
+    L_R = rot_geodesic_loss(R_pred, R_gt)
+    L_T = normalized_t_loss(t_pred, t_gt, D_obj)
+
+    # ---------------- alignment probe (run once) ------
+    global _ALIGN
+    if _ALIGN is None:
+        _ALIGN = probe_alignment(renderer, R_gt, t_gt, K, M, image_size)
+    inv  = _ALIGN['invert']
+    flip = _ALIGN['flip_v']
+    hpx  = _ALIGN['halfpx']
+
+    # Prepare extrinsics for rendering only (do NOT change what the pose loss sees)
+    if inv:
+        Rr_pred = R_pred.transpose(1,2)
+        tr_pred = -torch.einsum('bij,bj->bi', Rr_pred, t_pred)
+        Rr_gt   = R_gt.transpose(1,2)
+        tr_gt   = -torch.einsum('bij,bj->bi', Rr_gt, t_gt)
+    else:
+        Rr_pred, tr_pred = R_pred, t_pred
+        Rr_gt,   tr_gt   = R_gt,   t_gt
+
+    K_r = K.clone(); K_r[:,0,2] += hpx; K_r[:,1,2] += hpx
+
+    # ---------------- silhouette term -----------------
+    L_mask = torch.tensor(0., device=R_pred.device, dtype=L_R.dtype)
+    bce_val = torch.tensor(0., device=R_pred.device)
+    dice_val = torch.tensor(0., device=R_pred.device)
+    edge_val = torch.tensor(0., device=R_pred.device)
+    iou_val  = torch.tensor(0., device=R_pred.device)
+
+    H, W = image_size
+    Hs, Ws = (H//mask_downsample, W//mask_downsample) if mask_downsample>1 else (H, W)
+    M_use = F.interpolate(M.float(), size=(Hs, Ws), mode='bilinear', align_corners=False).clamp(0,1) if mask_downsample>1 else M.float()
+    BG_use = F.interpolate(BG.float(), size=(Hs, Ws), mode='bilinear', align_corners=False).clamp(0,1) if mask_downsample>1 else BG.float()
+
+    rgb_hat, sil_hat = renderer(Rr_pred, tr_pred, K_r, image_size=(Hs, Ws))
+    sil_hat = _ensure_nchw(sil_hat).float().clamp(0,1)
+    if flip:  # vertical-origin fix
+        sil_hat = torch.flip(sil_hat, [2])
+
+    has_fg = (M_use.sum(dim=(1,2,3)) > 10).float().view(-1,1,1,1)
+    sil_eff = sil_hat * has_fg
+    M_eff   = M_use   * has_fg
+
+    if λmask > 0.0 and has_fg.any():
+        bce_val  = F.binary_cross_entropy(sil_eff, M_eff)
+        dice_val = _dice_loss(sil_eff, M_eff)
+        iou_val  = _iou_loss(sil_eff, M_eff)
+        if λedge > 0.0:
+            gp = _sobel_grad(sil_eff); gg = _sobel_grad(M_eff)
+            edge_val = F.l1_loss(gp, gg)
+        L_mask = λbce*bce_val + λdice*dice_val + λedge*edge_val
+
+    # --------------- visualization (optional) --------
+    I_comp = composite(rgb_hat, BG_use, sil_eff)  # uses your composite()
+    # Correct GT IoU call (mask only; render to image_size)
+    iou_gt = gt_pose_iou(M, Rr_gt, tr_gt, K_r, renderer, image_size=(H, W))
+    print(f"[check] GT IoU: {iou_gt:.3f}")
+
+    # --------------- total & logs --------------------
+    loss = λR*L_R + λt*L_T + λmask*L_mask
+    logs = {
+        'rot_rad': L_R.detach(),
+        'trans_n': L_T.detach(),
+        'mask_bce': bce_val.detach(),
+        'mask_dice': dice_val.detach(),
+        'mask_edge': edge_val.detach(),
+        'mask_iou': (1. - iou_val).detach(),
+        'sil_mean': (M.float().mean().detach()),
+        'gt_iou': torch.tensor(iou_gt, device=R_pred.device)
+    }
+    return loss, logs, I_comp
+
+
 def pose_loss2(
     R_pred, t_pred, R_gt, t_gt, D_obj,
     M, K, image_size, renderer, BG,
