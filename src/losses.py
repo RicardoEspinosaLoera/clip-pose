@@ -13,6 +13,25 @@ def _downsize_hw(H, W, max_side=128, min_side=48):
     return h, w
 
 @torch.no_grad()
+def sample_mesh_points(verts, faces, n=1500):
+    """Area-weighted sampling of N points on a triangle mesh."""
+    v0 = verts[faces[:,0]]
+    v1 = verts[faces[:,1]]
+    v2 = verts[faces[:,2]]
+    areas = 0.5 * torch.linalg.norm(torch.cross(v1 - v0, v2 - v0, dim=1), dim=1)  # (F,)
+    prob = (areas / areas.sum()).clamp_min(1e-12)
+    idx = torch.multinomial(prob, n, replacement=True)  # (n,)
+    f0, f1, f2 = v0[idx], v1[idx], v2[idx]
+    u = torch.rand(n, 1, device=verts.device)
+    v = torch.rand(n, 1, device=verts.device)
+    swap = (u + v > 1.0).float()
+    u = u * (1 - swap) + (1 - u) * swap
+    v = v * (1 - swap) + (1 - v) * swap
+    pts = f0 + u * (f1 - f0) + v * (f2 - f0)  # (n,3)
+    return pts
+
+
+@torch.no_grad()
 def _rodrigues_from_euler(yaw_deg, pitch_deg, roll_deg, device, dtype):
     # yaw (z), pitch (y), roll (x) in degrees -> Rodrigues rotation matrix
     def Rz(a): 
