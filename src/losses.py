@@ -334,8 +334,8 @@ def pose_loss2(
     overlay = overlay_mask_on_image(overlay, M_eff,  color=(1,0,0), alpha=0.6, outline_px=2)
 
     # If you prefer full-res visuals for logging, uncomment:
-    # I_comp  = F.interpolate(I_comp,  size=(H,W), mode='bilinear', align_corners=False).clamp(0,1)
-    # overlay = F.interpolate(overlay, size=(H,W), mode='bilinear', align_corners=False).clamp(0,1)
+    I_comp  = F.interpolate(I_comp,  size=(H,W), mode='bilinear', align_corners=False).clamp(0,1)
+    overlay = F.interpolate(overlay, size=(H,W), mode='bilinear', align_corners=False).clamp(0,1)
 
     # Correct GT IoU check (mask only; render at image_size then resize inside)
     iou_gt = gt_pose_iou(M, Rr_gt, tr_gt, K_r, renderer, image_size=(H, W))
