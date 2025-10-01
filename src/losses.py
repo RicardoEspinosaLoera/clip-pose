@@ -282,7 +282,7 @@ def pose_loss2(
     flip = _ALIGN['flip_v']
     hpx  = _ALIGN['halfpx']
 
-    # Prepare extrinsics for rendering only (do NOT change what the pose loss sees)
+    # Prepare extrinsics for rendering only (do NOT change what pose losses see)
     if inv:
         Rr_pred = R_pred.transpose(1,2)
         tr_pred = -torch.einsum('bij,bj->bi', Rr_pred, t_pred)
@@ -303,12 +303,13 @@ def pose_loss2(
 
     H, W = image_size
     Hs, Ws = (H//mask_downsample, W//mask_downsample) if mask_downsample>1 else (H, W)
-    M_use = F.interpolate(M.float(), size=(Hs, Ws), mode='bilinear', align_corners=False).clamp(0,1) if mask_downsample>1 else M.float()
+
+    M_use  = F.interpolate(M.float(),  size=(Hs, Ws), mode='bilinear', align_corners=False).clamp(0,1) if mask_downsample>1 else M.float()
     BG_use = F.interpolate(BG.float(), size=(Hs, Ws), mode='bilinear', align_corners=False).clamp(0,1) if mask_downsample>1 else BG.float()
 
     rgb_hat, sil_hat = renderer(Rr_pred, tr_pred, K_r, image_size=(Hs, Ws))
     sil_hat = _ensure_nchw(sil_hat).float().clamp(0,1)
-    if flip:  # vertical-origin fix
+    if flip:
         sil_hat = torch.flip(sil_hat, [2])
 
     has_fg = (M_use.sum(dim=(1,2,3)) > 10).float().view(-1,1,1,1)
@@ -324,9 +325,19 @@ def pose_loss2(
             edge_val = F.l1_loss(gp, gg)
         L_mask = λbce*bce_val + λdice*dice_val + λedge*edge_val
 
-    # --------------- visualization (optional) --------
-    I_comp = composite(rgb_hat, BG_use, sil_eff)  # uses your composite()
-    # Correct GT IoU call (mask only; render to image_size)
+    # --------------- visualization -------------------
+    # composite of rendered RGB over BG at (Hs,Ws)
+    I_comp  = composite(rgb_hat, BG_use, sil_eff)
+
+    # overlay (pred outline in green, GT outline in red) at (Hs,Ws)
+    overlay = overlay_mask_on_image(BG_use, sil_eff, color=(0,1,0), alpha=0.6, outline_px=2)
+    overlay = overlay_mask_on_image(overlay, M_eff,  color=(1,0,0), alpha=0.6, outline_px=2)
+
+    # If you prefer full-res visuals for logging, uncomment:
+    # I_comp  = F.interpolate(I_comp,  size=(H,W), mode='bilinear', align_corners=False).clamp(0,1)
+    # overlay = F.interpolate(overlay, size=(H,W), mode='bilinear', align_corners=False).clamp(0,1)
+
+    # Correct GT IoU check (mask only; render at image_size then resize inside)
     iou_gt = gt_pose_iou(M, Rr_gt, tr_gt, K_r, renderer, image_size=(H, W))
     print(f"[check] GT IoU: {iou_gt:.3f}")
 
@@ -342,4 +353,4 @@ def pose_loss2(
         'sil_mean': (M.float().mean().detach()),
         'gt_iou': torch.tensor(iou_gt, device=R_pred.device)
     }
-    return loss, logs, I_comp
+    return loss, logs, I_comp, overlay
