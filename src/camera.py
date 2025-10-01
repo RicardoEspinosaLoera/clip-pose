@@ -93,3 +93,10 @@ def compose_camera_object(cam, clip, H, W, strict=True):
         raise ValueError(f"compose_camera_object: tz<=0 (tz={t_co[2]:.6f}). "
                          "Check camera conversion or your source JSON.")
     return K.astype(np.float32), R_co.astype(np.float32), t_co.astype(np.float32)
+
+def sixd_to_rotmat(a):  # Zhou et al.
+    a1, a2 = a[..., :3], a[..., 3:]
+    b1 = torch.nn.functional.normalize(a1, dim=-1)
+    b2 = torch.nn.functional.normalize(a2 - (b1*a2).sum(-1, keepdim=True)*b1, dim=-1)
+    b3 = torch.cross(b1, b2, dim=-1)
+    return torch.stack([b1, b2, b3], dim=-1)  # (B,3,3)
