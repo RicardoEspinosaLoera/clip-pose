@@ -419,13 +419,14 @@ def pose_loss2(
     #rgb_hat, sil_hat = renderer(R_pred, t_render, K_use, image_size=(Hs, Ws))
     sil_hat = sil_hat.float().clamp(0,1)  # (B,1,Hs,Ws)
 
-    """
     with torch.no_grad():
-        # GT should be visible
-        Rgt_w2c, tgt_w2c = cam2obj_to_world2cam(R_gt, t_gt)  # or however you compose GT
-        rgb_gt, sil_gt = renderer(Rgt_w2c, tgt_w2c, K, image_size=(H, W))
-        print("GT tz>0 ratio:", (tgt_w2c[:,2] > 0).float().mean().item(),
-            " GT sil sum:", float(sil_gt.sum().item()))"""
+        tz_ratio = (batch['t_co'][:, 2].to(device) > 0).float().mean().item()
+        print("GT tz>0 ratio:", tz_ratio)  # should be 1.0
+        rgb_gt, sil_gt = renderer(batch['R_co'].to(device),
+                                batch['t_co'].to(device),
+                                batch['K'].to(device).unsqueeze(0).expand(batch['image'].size(0), -1, -1),
+                                image_size=(batch['image'].shape[-2], batch['image'].shape[-1]))
+        print("GT sil sum:", float(sil_gt.sum().item()))
 
     # ---- silhouette loss (optional) ----
     L_mask = torch.tensor(0., device=R_pred.device, dtype=L_R.dtype)
