@@ -424,7 +424,7 @@ def pose_loss2(
         # GT should be visible
         #Rgt_w2c, tgt_w2c = cam2obj_to_world2cam(R_gt, t_gt)  # or however you compose GT
         rgb_gt, sil_gt = renderer(R_gt, t_gt, K_use, image_size=(Hs,Ws))
-        print("GT tz>0 ratio:", (tgt_w2c[:,2] > 0).float().mean().item(),
+        print("GT tz>0 ratio:", (t_gt[:,2] > 0).float().mean().item(),
             " GT sil sum:", float(sil_gt.sum().item()))
     
 
