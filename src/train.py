@@ -234,8 +234,8 @@ def run_epoch(model, renderer, loader, device, cfg, P_obj, D_obj, verts, mode,
         r6, t_pred = model(I)
         R_pred = sixd_to_rotmat(r6)
         R_pred = project_to_so3(R_pred) 
-        R_gt = sixd_to_rotmat(R_gt)
-        R_gt = project_to_so3(R_gt)
+        #R_gt = sixd_to_rotmat(R_gt)
+        #R_gt = project_to_so3(R_gt)
         H, W = I.shape[-2], I.shape[-1]
 
         #Rendering
