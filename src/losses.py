@@ -408,7 +408,7 @@ def pose_loss2(
         Rr_gt,   tr_gt   = R_gt,   t_gt
 
     K_r = K.clone(); K_r[:,0,2] += hpx; K_r[:,1,2] += hpx
-
+    H, W = image_size
     global _DELTA
     if _DELTA is None:
         _DELTA = calibrate_delta(
@@ -428,7 +428,7 @@ def pose_loss2(
     edge_val = torch.tensor(0., device=R_pred.device)
     iou_val  = torch.tensor(0., device=R_pred.device)
 
-    H, W = image_size
+   
     Hs, Ws = (H//mask_downsample, W//mask_downsample) if mask_downsample>1 else (H, W)
 
     M_use  = F.interpolate(M.float(),  size=(Hs, Ws), mode='bilinear', align_corners=False).clamp(0,1) if mask_downsample>1 else M.float()
