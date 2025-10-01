@@ -321,7 +321,8 @@ def _iou_loss(p, g, eps=1e-6):
 def _sobel_grad(x): # x: (B,1,H,W) 
     kx = torch.tensor([[-1.,0.,1.], [-2.,0.,2.], [-1.,0.,1.]], device=x.device, dtype=x.dtype).view(1,1,3,3) 
     ky = torch.tensor([[-1.,-2.,-1.], [ 0., 0., 0.], [ 1., 2., 1.]], device=x.device, dtype=x.dtype).view(1,1,3,3) 
-    gx = F.conv2d(x, kx, padding=1) gy = F.conv2d(x, ky, padding=1) 
+    gx = F.conv2d(x, kx, padding=1) 
+    gy = F.conv2d(x, ky, padding=1) 
     return torch.sqrt(gx*gx + gy*gy + 1e-8)
 
 def pose_loss2(
