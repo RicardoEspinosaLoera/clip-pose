@@ -161,6 +161,10 @@ def pose_loss(R_pred, t_pred, R_gt, t_gt, D_obj, λR=0.5, λt=0.5):
     logs = {'rot_rad': L_R.detach(), 'trans_n': L_T.detach()}
     return loss, logs
 
+def has_foreground(sil, thr=0.01):
+    # sil: (B,1,H,W)
+    return (sil.max(dim=-1)[0].max(dim=-1)[0].max(dim=1)[0] > thr)  # (B,)
+
 def _dice_loss(p, g, eps=1e-6):
     # p,g: (B,1,H,W) in [0,1]
     inter = (p * g).sum(dim=(1,2,3))
@@ -186,6 +190,18 @@ def _sobel_grad(x):
     gy = F.conv2d(x, ky, padding=1)
     return torch.sqrt(gx*gx + gy*gy + 1e-8)
 
+@torch.no_grad()
+def gt_pose_iou(I, M, R_gt, t_gt, K):
+    rgb_gt, sil_gt = renderer(R_gt, t_gt, K, image_size=I.shape[-2:])
+    if sil_gt.ndim == 3: sil_gt = sil_gt.unsqueeze(1)
+    sil_b = (sil_gt > 0.5).float()
+    M_b   = (M > 0.5).float()
+    inter = (sil_b * M_b).sum(dim=(1,2,3))
+    union = (sil_b + M_b - sil_b*M_b).sum(dim=(1,2,3)).clamp_min(1)
+    iou = (inter / union).mean().item()
+    print(f"[check] GT IoU: {iou:.3f}")
+    return iou
+
 def pose_loss2(
     R_pred, t_pred, R_gt, t_gt, D_obj,
     M, K, image_size, renderer, BG,
@@ -204,6 +220,9 @@ def pose_loss2(
     λ*:            weights; set λmask=0 to disable silhouette loss
     mask_downsample: integer factor to downscale mask & render for speed
     """
+
+    
+
     # --- base pose terms (your existing) ---
     L_R = rot_geodesic_loss(R_pred, R_gt)
     L_T = normalized_t_loss(t_pred, t_gt, D_obj)
@@ -226,7 +245,7 @@ def pose_loss2(
         else:
             M_use = M
             rgb_hat, sil_hat = renderer(R_pred, t_pred, K, image_size=(H, W))
-
+        
         # Ensure shape (B,1,H,W) & range [0,1]
         if sil_hat.ndim == 3:  # (B,H,W)
             sil_hat = sil_hat.unsqueeze(1)
@@ -267,7 +286,7 @@ def pose_loss2(
     )
 
     I_comp = composite(rgb_hat, BG, sil_hat)
-
+    gt_pose_iou(I, M, R_gt, t_gt, K)
 
     logs = {
         'rot_rad': L_R.detach(),
