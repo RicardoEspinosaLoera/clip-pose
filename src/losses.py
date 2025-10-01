@@ -171,6 +171,8 @@ def calibrate_delta_fast(renderer, R_gt, t_gt, K, M, image_size, flip_v=False, h
 
 
 # ---------- UPDATED pose_loss2 (uses fast calibration; optional visuals) ----------
+_ALIGN, _DELTA = None
+
 def pose_loss2(
     R_pred, t_pred, R_gt, t_gt, D_obj,
     M, K, image_size, renderer, BG,
@@ -185,6 +187,7 @@ def pose_loss2(
 
     # alignment probe (cached)
     global _ALIGN, _DELTA
+
     if _ALIGN is None:
         _ALIGN = probe_alignment(renderer, R_gt, t_gt, K, M, image_size)
     inv, flip, hpx = _ALIGN['invert'], _ALIGN['flip_v'], _ALIGN['halfpx']
