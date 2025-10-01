@@ -30,6 +30,15 @@ def sample_mesh_points(verts, faces, n=1500):
     pts = f0 + u * (f1 - f0) + v * (f2 - f0)  # (n,3)
     return pts
 
+def rot_geodesic_loss(R_pred, R_gt, eps=1e-7): 
+    """Geodesic rotation loss in radians. R_*: (B,3,3)""" 
+    Rt = torch.einsum('bij,bjk->bik', R_pred.transpose(1,2), R_gt) # R_p^T 
+    R_g tr = Rt[:, 0,0] + Rt[:, 1,1] + Rt[:, 2,2] 
+    cos = ((tr - 1.0) * 0.5).clamp(-1.0 + eps, 1.0 - eps) 
+    return torch.acos(cos).mean()
+
+def normalized_t_loss(t_pred, t_gt, D_obj, eps=1e-8): 
+    return (torch.linalg.norm(t_pred - t_gt, dim=1) / (D_obj + eps)).mean()
 
 @torch.no_grad()
 def _rodrigues_from_euler(yaw_deg, pitch_deg, roll_deg, device, dtype):
