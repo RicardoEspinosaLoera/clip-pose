@@ -286,7 +286,7 @@ def pose_loss2(
     )
 
     I_comp = composite(rgb_hat, BG, sil_hat)
-    gt_pose_iou(I, M, R_gt, t_gt, K)
+    gt_pose_iou(rgb_hat, M, R_gt, t_gt, K)
 
     logs = {
         'rot_rad': L_R.detach(),
