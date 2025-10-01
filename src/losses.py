@@ -235,15 +235,14 @@ def _so3_relative_angle(R1, R2, eps=1e-6):
     return torch.atan2(sin, cos)  # (B,) radians
 
 # ---------- stable rotation loss ----------
-def project_to_so3(R):
-    # R: (B,3,3)
+def _project_to_so3(R):
     U, _, Vt = torch.linalg.svd(R)
     Rproj = U @ Vt
-    # ensure det=+1 (proper rotation)
     det = torch.det(Rproj).unsqueeze(-1).unsqueeze(-1)
-    fix = torch.diag_embed(Rproj.new_tensor([1., 1., -1.]))
-    Rproj = torch.where(det < 0, U @ fix @ Vt, Rproj)
-    return Rproj
+    Vt_fix = torch.where(det < 0,
+                         torch.cat([Vt[..., :2, :], -Vt[..., 2:3, :]], dim=-2),
+                         Vt)
+    return U @ Vt_fix
 
 def _so3_angle(R1, R2, eps=1e-6):
     R = torch.einsum('bij,bjk->bik', R1.transpose(1,2), R2)
@@ -255,15 +254,14 @@ def _so3_angle(R1, R2, eps=1e-6):
     sin = (0.5 * torch.linalg.norm(v, dim=-1)).clamp(0, 1.0-eps)
     return torch.atan2(sin, cos)   # (B,)
 
-    
-def rot_geodesic_loss(R_pred, R_gt, project=True, eps=1e-7):
-    if project:
-        R_pred = project_to_so3(R_pred)
+def rot_geodesic_loss(R_pred, R_gt, eps=1e-7):
+    # optional: project to SO(3) if your head outputs aren't guaranteed orthonormal
+    # R_pred = _project_to_so3(R_pred)
+
     Rt = torch.einsum('bij,bjk->bik', R_pred.transpose(1,2), R_gt)
-    tr = Rt[:,0,0] + Rt[:,1,1] + Rt[:,2,2]
+    tr = Rt[:, 0, 0] + Rt[:, 1, 1] + Rt[:, 2, 2]
     cos = ((tr - 1.0) * 0.5).clamp(-1.0 + eps, 1.0 - eps)
-    L = torch.acos(cos).mean()
-    return torch.nan_to_num(L, nan=0.0, posinf=0.0, neginf=0.0)
+    return torch.acos(cos).mean()
 
 
 # ---------- rendering safety helpers ----------
@@ -308,9 +306,11 @@ def _render_safe(renderer, R, t, K, image_size, flip_v=False):
     rgb = rgb.float().clamp(0,1)
     return rgb, sil
 
-def t_loss(t_pred, t_gt, D_obj, eps=1e-8): 
-    return (torch.linalg.norm(t_pred - t_gt, dim=1)).mean()
+def normalized_t_loss(t_pred, t_gt, D_obj, eps=1e-8): 
+    return (torch.linalg.norm(t_pred - t_gt, dim=1) / (D_obj + eps)).mean()
 
+import torch
+import torch.nn.functional as F
 
 # --- helper 0: (optional) rescale intrinsics if you render at a different size ---
 def rescale_K(K, old_H, old_W, new_H, new_W):
@@ -387,7 +387,7 @@ def pose_loss2(
 ):
     # --- base pose losses (as before) ---
     L_R = rot_geodesic_loss(R_pred, R_gt)
-    L_T = t_loss(t_pred, t_gt, D_obj)
+    L_T = normalized_t_loss(t_pred, t_gt, D_obj)
 
     H, W = image_size
     Hs, Ws = (H//mask_downsample, W//mask_downsample) if mask_downsample>1 else (H, W)
@@ -404,19 +404,17 @@ def pose_loss2(
     #t_pred_render = t_pred.clone()
     #t_pred_render[:, 2] = F.softplus(t_pred_render[:, 2]) + 1e-2
 
-    #t_pred_render = t_pred.clone()
-    #tz = F.softplus(t_pred_render[:, 2:3]) + 1e-2      # (B,1)
-    #t_pred_render = torch.cat([t_pred_render[:, :2], tz], dim=1)
+    t_pred_render = t_pred.clone()
+    tz = F.softplus(t_pred_render[:, 2:3]) + 1e-2      # (B,1)
+    t_pred_render = torch.cat([t_pred_render[:, :2], tz], dim=1)
 
-    """R_pred = project_to_so3(R_pred)
     t_anchor = fit_batch_in_fov(renderer, R_pred.detach(), K_use, Hs, Ws, fill=anchor_fill)
     # Blend: alpha=0 => all anchor (guaranteed visible), alpha=1 => all t_pred_render
-    t_render = (1.0 - anchor_alpha) * t_anchor + anchor_alpha * t_pred_render"""
+    t_render = (1.0 - anchor_alpha) * t_anchor + anchor_alpha * t_pred_render
 
-    #R_pred_w2c, t_pred_w2c = cam2obj_to_world2cam(R_pred, t_pred)
-    rgb_hat, sil_hat = renderer(R_pred, t_pred, K_use, image_size=(Hs, Ws))  
-
-    #rgb_hat, sil_hat = renderer(R_pred_w2c, t_render, K_use, image_size=(Hs,Ws))
+    R_pred_w2c, t_pred_w2c = cam2obj_to_world2cam(R_pred, t_render)
+    #R_gt_w2c,  t_gt_w2c    = cam2obj_to_world2cam(R_gt,  t_gt)
+    rgb_hat, sil_hat = renderer(R_pred_w2c, t_render, K_use, image_size=(Hs,Ws))
     # ---- differentiable render (Kaolin DIB-R) ----
     #rgb_hat, sil_hat = renderer(R_pred, t_render, K_use, image_size=(Hs, Ws))
     sil_hat = sil_hat.float().clamp(0,1)  # (B,1,Hs,Ws)
