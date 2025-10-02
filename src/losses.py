@@ -414,7 +414,8 @@ def pose_loss2(
 
     #R_pred_w2c, t_pred_w2c = cam2obj_to_world2cam(R_pred, t_pred)
     R_gt_w2c,  t_gt_w2c    = cam2obj_to_world2cam(R_gt,  t_gt)
-    rgb_hat, sil_hat = renderer(R_gt_w2c, t_gt_w2c, K_use, image_size=(Hs,Ws))
+    rgb_hat, sil_hat = renderer(R_gt, t_gt, K_use, image_size=(Hs,Ws))
+    print("native sil sum:", float(sil_hat.sum().item()))
     # ---- differentiable render (Kaolin DIB-R) ----
     #rgb_hat, sil_hat = renderer(R_pred, t_render, K_use, image_size=(Hs, Ws))
     sil_hat = sil_hat.float().clamp(0,1)  # (B,1,Hs,Ws)
