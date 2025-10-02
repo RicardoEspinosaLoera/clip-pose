@@ -414,9 +414,7 @@ def pose_loss2(
 
     #R_pred_w2c, t_pred_w2c = cam2obj_to_world2cam(R_pred, t_pred)
     #R_gt_w2c,  t_gt_w2c    = cam2obj_to_world2cam(R_gt,  t_gt)
-    print("negate_z:", renderer.negate_z, "flip_v:", renderer.flip_v)
-    renderer.negate_z = False          # Kaolin expects +Z in front
-    renderer.flip_v   = False          # K built for top-left ori
+
     rgb_hat, sil_hat = renderer(R_gt, t_gt, K_use, image_size=(Hs,Ws))
     
     # ---- differentiable render (Kaolin DIB-R) ----
@@ -430,6 +428,20 @@ def pose_loss2(
         rgb_gt, sil_gt = renderer(R_gt, t_gt, K_use, image_size=(Hs,Ws))
         print("GT tz>0 ratio:", (t_gt[:,2] > 0).float().mean().item(),
             " GT sil sum:", float(sil_gt.sum().item()))"""
+
+    with torch.no_grad():
+        # project vertices to pixels
+        V_cam = torch.einsum('bij,vj->bvi', R_gt, renderer.verts) + t_gt[:, None, :]
+        z = V_cam[..., 2].clamp_min(1e-6)
+        u = K_use[:, None, 0, 0] * (V_cam[..., 0]/z) + K_use[:, None, 0, 2]
+        v = K_use[:, None, 1, 1] * (V_cam[..., 1]/z) + K_use[:, None, 1, 2]
+
+        umin, umax = u.amin(dim=1), u.amax(dim=1)
+        vmin, vmax = v.amin(dim=1), v.amax(dim=1)
+
+        in_w = (umax >= -16) & (umin <= W-1+16)
+        in_h = (vmax >= -16) & (vmin <= H-1+16)
+        print("GT bbox intersects screen (ratio):", (in_w & in_h).float().mean().item())
     
 
     
