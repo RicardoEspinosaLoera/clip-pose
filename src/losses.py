@@ -431,18 +431,7 @@ def pose_loss2(
 
     with torch.no_grad():
         # project vertices to pixels
-        V_cam = torch.einsum('bij,vj->bvi', R_gt, renderer.verts) + t_gt[:, None, :]
-        z = V_cam[..., 2].clamp_min(1e-6)
-        u = K_use[:, None, 0, 0] * (V_cam[..., 0]/z) + K_use[:, None, 0, 2]
-        v = K_use[:, None, 1, 1] * (V_cam[..., 1]/z) + K_use[:, None, 1, 2]
-
-        umin, umax = u.amin(dim=1), u.amax(dim=1)
-        vmin, vmax = v.amin(dim=1), v.amax(dim=1)
-
-        in_w = (umax >= -16) & (umin <= W-1+16)
-        in_h = (vmax >= -16) & (vmin <= H-1+16)
-        print("GT bbox intersects screen (ratio):", (in_w & in_h).float().mean().item())
-    
+        print("valid faces per sample:", valid.sum(dim=1)[:4].tolist())  # first few
 
     
 
