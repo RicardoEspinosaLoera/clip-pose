@@ -15,7 +15,7 @@ import torch.nn.functional as F
 import math
 
 @torch.no_grad()
-def save_or_log_overlay(I, I_comp, sil, M, out_dir, tag, step, to_wandb=False):
+def save_or_log_overlay(I, I_comp, sil, rgb, M, out_dir, tag, step, to_wandb=False):
     os.makedirs(out_dir, exist_ok=True)
     # I, I_comp: (B,3,H,W); sil, M: (B,1,H,W)
 
@@ -32,7 +32,8 @@ def save_or_log_overlay(I, I_comp, sil, M, out_dir, tag, step, to_wandb=False):
         I[0].detach().cpu(),
         I_comp[0].detach().cpu(),
         sil[0].detach().cpu(),
-        M[0].detach().cpu().repeat(3,1,1)
+        M[0].detach().cpu().repeat(3,1,1),
+        rgb[0].detach().cpu()
     ], nrow=4, normalize=True, scale_each=True)
     #path = os.path.join(out_dir, f"{tag}_{step:06d}.png")
     #vutils.save_image(grid, path)
@@ -262,7 +263,7 @@ def run_epoch(model, renderer, loader, device, cfg, P_obj, D_obj, verts, mode,
 
         """
         
-        loss, logs, I_comp, overlay = pose_loss2(R_pred, t_pred, R_gt, t_gt, D_batch, M, K, (H, W), renderer,BG, λR=0.5, λt=0.5, λmask=1.0, λbce=1.0, λdice=0.5, λedge=0.1, mask_downsample=2)
+        loss, logs, I_comp, overlay, rgb = pose_loss2(R_pred, t_pred, R_gt, t_gt, D_batch, M, K, (H, W), renderer,BG, λR=0.5, λt=0.5, λmask=1.0, λbce=1.0, λdice=0.5, λedge=0.1, mask_downsample=2)
         
         if is_train:
             optimizer.zero_grad(set_to_none=True)
@@ -302,7 +303,7 @@ def run_epoch(model, renderer, loader, device, cfg, P_obj, D_obj, verts, mode,
                 f"{mode}/Tn": batch_Tn,
                 f"{mode}/Tn": batch_Tn,
             })
-            save_or_log_overlay(I, I_comp, overlay, M, os.path.join(cfg['train_io']['out_dir'], 'val_vis'), 'val', step,
+            save_or_log_overlay(I, I_comp, overlay,rgb, M, os.path.join(cfg['train_io']['out_dir'], 'val_vis'), 'val', step,
                                 to_wandb=(wandb is not None and cfg['wandb']['enabled']))
 
     # ---- epoch averages ----

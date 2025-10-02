@@ -397,7 +397,8 @@ def pose_loss2(
     BG_use = F.interpolate(BG.float(), size=(Hs, Ws), mode='bilinear', align_corners=False).clamp(0,1) if mask_downsample>1 else BG.float()
 
     # Make K consistent with render size
-    K_use = rescale_K(K, H, W, Hs, Ws)
+    #K_use = rescale_K(K, H, W, Hs, Ws) 
+    K_use = K
 
     # ---- anchor for visibility (per-batch) ----
     # Enforce tz>0 on the prediction used for rendering
@@ -429,11 +430,7 @@ def pose_loss2(
         print("GT tz>0 ratio:", (t_gt[:,2] > 0).float().mean().item(),
             " GT sil sum:", float(sil_gt.sum().item()))"""
 
-    with torch.no_grad():
-        # project vertices to pixels
-        print("valid faces per sample:", valid.sum(dim=1)[:4].tolist())  # first few
-
-    
+   
 
     # ---- silhouette loss (optional) ----
     L_mask = torch.tensor(0., device=R_pred.device, dtype=L_R.dtype)
@@ -476,4 +473,4 @@ def pose_loss2(
         I_comp  = F.interpolate(I_comp,  size=(H, W), mode='bilinear', align_corners=False).clamp(0,1)
         overlay = F.interpolate(overlay, size=(H, W), mode='bilinear', align_corners=False).clamp(0,1)
 
-    return loss, logs, I_comp, overlay
+    return loss, logs, I_comp, overlay, rgb_hat
