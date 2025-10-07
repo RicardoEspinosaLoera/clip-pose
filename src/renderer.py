@@ -49,20 +49,22 @@ class SoftMeshRenderer(torch.nn.Module):
         device = self.verts.device
         R, t, K = R.to(device).float(), t.to(device).float(), K.to(device).float()
 
-        # ----------------------------------------------------
-        # 1️⃣ Coordinate system conversion (VTK → Kaolin)
-        # ----------------------------------------------------
-        # If your dataset was generated using PyVista or VTK camera conventions
-        # (+Y up, -Z forward), convert to Kaolin (+Z forward, -Y up)
-        #R_fix = torch.diag(torch.tensor([1.0, -1.0, -1.0], device=R.device, dtype=R.dtype))
-        #R = R @ R_fix
-        #t = (t @ R_fix).clone()
 
         # ----------------------------------------------------
         # 2️⃣ Transform vertices: world → camera → image
         # ----------------------------------------------------
         v_cam = torch.einsum('bij,vj->bvi', R, self.verts) + t[:, None, :]   # (B,V,3)
         v_img = project_pixels(v_cam, K)                                     # (B,V,3) [u,v,z]
+
+
+        u, v = v_img[..., 0], v_img[..., 1]
+        print(
+            "u range:", u.min().item(), u.max().item(),
+            "v range:", v.min().item(), v.max().item()
+        )
+
+        visible = ((u >= 0) & (u < W) & (v >= 0) & (v < H) & (v_cam[..., 2] > 0))
+        print("visible vertices:", visible.float().mean().item() * 100, "%")
 
         H, W = int(image_size[0]), int(image_size[1])
 
