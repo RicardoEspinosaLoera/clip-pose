@@ -472,7 +472,11 @@ def pose_loss2(
         I_comp  = F.interpolate(I_comp,  size=(H, W), mode='bilinear', align_corners=False).clamp(0,1)
         overlay = F.interpolate(overlay, size=(H, W), mode='bilinear', align_corners=False).clamp(0,1)
 
-    print("fx, fy, cx, cy =", K_use[0,0].item(), K_use[1,1].item(), K_use[0,2].item(), K_use[1,2].item())
+    print("fx, fy, cx, cy =", 
+      K_use[:, 0, 0].mean().item(), 
+      K_use[:, 1, 1].mean().item(), 
+      K_use[:, 0, 2].mean().item(), 
+      K_use[:, 1, 2].mean().item())
     print("image_size =", image_size)
 
     return loss, logs, I_comp, overlay, rgb_hat
