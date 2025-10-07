@@ -18,48 +18,33 @@ def _quat_wxyz_to_R(q):
 
 def _pyvista_cam_to_w2c(cam, H, W):
     """
-    Build Kaolin-style world→camera matrix from PyVista/VTK camera.
-      - Converts VTK's +Y-up, -Z-forward to Kaolin's -Y-up, +Z-forward.
-      - Ensures tz > 0 for visible objects.
+    Convert PyVista/VTK camera to Kaolin-compatible world→camera transform.
+    Kaolin expects +Z forward, -Y up.
     """
+    import numpy as np, math
 
-    C = np.array(cam['position'],    dtype=np.float32)
+    C = np.array(cam['position'], dtype=np.float32)
     F = np.array(cam['focal_point'], dtype=np.float32)
-    U = np.array(cam['view_up'],     dtype=np.float32)
+    U = np.array(cam['view_up'], dtype=np.float32)
 
-    # VTK camera: looks along (F - C)
-    forward = _normalize(F - C)  # world-space direction of the camera's optical axis (−Z)
-    right   = _normalize(np.cross(forward, U))
-    up      = np.cross(right, forward)
+    # PyVista looks along (F - C) (−Z direction)
+    # Kaolin wants +Z forward, so use (C - F)
+    forward = _normalize(C - F)          # 👈 FLIPPED here
+    right   = _normalize(np.cross(U, forward))
+    up      = np.cross(forward, right)
 
-    # --- Negate forward to match Kaolin's +Z convention ---
-    forward = -forward
-
-    # Camera-to-world, then world→camera
     R_c2w = np.stack([right, up, forward], axis=1)
-    R_w2c = R_c2w.T.copy()
-    t_w2c = (-R_w2c @ C).astype(np.float32)
+    R_w2c = R_c2w.T
+    t_w2c = -R_w2c @ C
 
-    # --- Apply VTK→Kaolin axis fix (+Z forward, -Y up) ---
-    R_fix = np.diag([1.0, -1.0, -1.0]).astype(np.float32)
-    R_w2c = R_fix @ R_w2c
-    t_w2c = R_fix @ t_w2c
+    # Kaolin's pixel convention: top-left origin
+    fx, fy, cx, cy = cam['fx'], cam['fy'], cam['cx'], cam['cy']
+    K = np.array([[fx, 0., cx],
+                  [0., fy, cy],
+                  [0., 0., 1.]], dtype=np.float32)
 
-    # Intrinsics
-    if all(k in cam for k in ('fx', 'fy', 'cx', 'cy')):
-        fx, fy, cx, cy = float(cam['fx']), float(cam['fy']), float(cam['cx']), float(cam['cy'])
-    else:
-        vdeg = float(cam.get('view_angle', 30.0))
-        vFOV = math.radians(vdeg)
-        fy = (H * 0.5) / math.tan(vFOV * 0.5)
-        fx = fy
-        cx, cy = (W - 1) * 0.5, (H - 1) * 0.5
+    return R_w2c.astype(np.float32), t_w2c.astype(np.float32), K
 
-    K = np.array([[fx, 0.,  cx],
-                  [0.,  fy, cy],
-                  [0.,  0.,  1.]], dtype=np.float32)
-
-    return R_w2c, t_w2c, K
 
 
 
