@@ -56,7 +56,7 @@ class SoftMeshRenderer(torch.nn.Module):
         v_cam = torch.einsum('bij,vj->bvi', R, self.verts) + t[:, None, :]   # (B,V,3)
         v_img = project_pixels(v_cam, K)                                     # (B,V,3) [u,v,z]
 
-
+        H, W = int(image_size[0]), int(image_size[1])
         u, v = v_img[..., 0], v_img[..., 1]
         print(
             "u range:", u.min().item(), u.max().item(),
