@@ -397,24 +397,8 @@ def pose_loss2(
     BG_use = F.interpolate(BG.float(), size=(Hs, Ws), mode='bilinear', align_corners=False).clamp(0,1) if mask_downsample>1 else BG.float()
 
     # Make K consistent with render size
-    #K_use = rescale_K(K, H, W, Hs, Ws) 
     K_use = K
-
-    # ---- anchor for visibility (per-batch) ----
-    # Enforce tz>0 on the prediction used for rendering
-    #t_pred_render = t_pred.clone()
-    #t_pred_render[:, 2] = F.softplus(t_pred_render[:, 2]) + 1e-2
-    """
-    t_pred_render = t_pred.clone()
-    tz = F.softplus(t_pred_render[:, 2:3]) + 1e-2      # (B,1)
-    t_pred_render = torch.cat([t_pred_render[:, :2], tz], dim=1)
-
-    t_anchor = fit_batch_in_fov(renderer, R_pred.detach(), K_use, Hs, Ws, fill=anchor_fill)
-    # Blend: alpha=0 => all anchor (guaranteed visible), alpha=1 => all t_pred_render
-    t_render = (1.0 - anchor_alpha) * t_anchor + anchor_alpha * t_pred_render"""
-
-    #R_pred_w2c, t_pred_w2c = cam2obj_to_world2cam(R_pred, t_pred)
-    #R_gt_w2c,  t_gt_w2c    = cam2obj_to_world2cam(R_gt,  t_gt)
+    #Check if render using Kaolin is the same as Pyvista
     rgb_hat, sil_hat = renderer(R_gt, t_gt, K_use, image_size=(Hs,Ws))
     
     # ---- differentiable render (Kaolin DIB-R) ----
