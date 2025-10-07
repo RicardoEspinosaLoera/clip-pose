@@ -17,7 +17,6 @@ def _quat_wxyz_to_R(q):
     ], dtype=np.float32)
 
 def _pyvista_cam_to_w2c(cam, H, W):
-    import numpy as np, math
 
     C = np.array(cam['position'], dtype=np.float32)
     F = np.array(cam['focal_point'], dtype=np.float32)
@@ -91,16 +90,20 @@ def compose_camera_object(cam, clip, H, W, strict=True):
     - Kaolin convention: +Z forward; tz>0 for visible objects.
     - K is for the provided (H, W).
     """
+    # world→camera from PyVista, already Kaolin-corrected
     R_w2c, t_w2c, K = _pyvista_cam_to_w2c(cam, H, W)
+
+    # object→camera in Kaolin frame
     R_co, t_co = _world_obj_to_obj2cam(clip, R_w2c, t_w2c)
 
-    # --- FIX: convert VTK -> Kaolin coordinate system ---
-    R_fix = np.diag([1.0, -1.0, -1.0])
-    R_co = R_fix @ R_co
-    t_co = R_fix @ t_co
-
+    if strict and not (t_co[2] > 0.0):
+        raise ValueError(
+            f"compose_camera_object: tz<=0 (tz={t_co[2]:.6f}). "
+            "Check camera conversion or source JSON."
+        )
 
     return K.astype(np.float32), R_co.astype(np.float32), t_co.astype(np.float32)
+
 
 
 def sixd_to_rotmat(a):  # Zhou et al.
