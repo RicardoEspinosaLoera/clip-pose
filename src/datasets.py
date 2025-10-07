@@ -17,7 +17,7 @@ class TripletDataset(Dataset):
 
     def __len__(self): return len(self.items)
 
-    def vtk_to_kaolin_pose(R, t):
+    def vtk_to_kaolin_pose(self,R, t):
         # Flip Y,Z to convert from VTK to Kaolin (OpenGL-style)
         R_fix = np.diag([1, -1, -1])
         return R_fix @ R, R_fix @ t
