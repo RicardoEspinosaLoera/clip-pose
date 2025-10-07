@@ -26,7 +26,7 @@ def save_or_log_overlay(I, I_comp, sil, rgb, M, out_dir, tag, step, to_wandb=Fal
 
     #H, W = I.shape[-2], I.shape[-1]               # spatial dims only
     #I_comp_r = F.interpolate(I_comp, size=(H, W), mode='bilinear', align_corners=False).clamp(0, 1)
-    #I_sil_r = F.interpolate(sil, size=(H, W), mode='bilinear', align_corners=False).clamp(0,1)
+    rgb = F.interpolate(sil, size=(H, W), mode='bilinear', align_corners=False).clamp(0,1)
 
     grid = vutils.make_grid([
         I[0].detach().cpu(),
