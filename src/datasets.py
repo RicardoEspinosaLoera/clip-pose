@@ -4,6 +4,8 @@ import imageio.v2 as imageio
 import torch
 from torch.utils.data import Dataset
 from .camera import compose_camera_object, _rescale_K  # re-use rescale_K if you downsample later
+import numpy as np
+
 
 class TripletDataset(Dataset):
     def __init__(self, root, train=True, transform=None, strict_tz=True):
@@ -15,6 +17,11 @@ class TripletDataset(Dataset):
 
     def __len__(self): return len(self.items)
 
+    def vtk_to_kaolin_pose(R, t):
+        # Flip Y,Z to convert from VTK to Kaolin (OpenGL-style)
+        R_fix = np.diag([1, -1, -1])
+        return R_fix @ R, R_fix @ t
+        
     def __getitem__(self, idx):
         jpath = self.items[idx]
         stem = os.path.splitext(jpath)[0]
@@ -33,6 +40,7 @@ class TripletDataset(Dataset):
         # Compose Kaolin-friendly GT from PyVista JSON (obj→cam, tz>0)
         try:
             K, R_co, t_co = compose_camera_object(meta['camera'], meta['clip'], H, W, strict=self.strict_tz)
+            R_co, t_co = vtk_to_kaolin_pose(R_co, t_co)
         except Exception as e:
             # Attach filename to help debugging
             raise RuntimeError(f"[{os.path.basename(jpath)}] compose_camera_object failed: {e}")
