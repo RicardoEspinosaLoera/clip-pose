@@ -41,7 +41,7 @@ class TripletDataset(Dataset):
         # Compose Kaolin-friendly GT from PyVista JSON (obj→cam, tz>0)
         try:
             K, R_co, t_co = compose_camera_object(meta['camera'], meta['clip'], H, W, strict=self.strict_tz)
-            R_co, t_co = vtk_to_kaolin_pose(R_co, t_co)
+            #R_co, t_co = vtk_to_kaolin_pose(R_co, t_co)
         except Exception as e:
             # Attach filename to help debugging
             raise RuntimeError(f"[{os.path.basename(jpath)}] compose_camera_object failed: {e}")
