@@ -66,8 +66,7 @@ class SoftMeshRenderer(torch.nn.Module):
         visible = ((u >= 0) & (u < W) & (v >= 0) & (v < H) & (v_cam[..., 2] > 0))
         print("visible vertices:", visible.float().mean().item() * 100, "%")
 
-        H, W = int(image_size[0]), int(image_size[1])
-
+        print("verts range (min,max):", self.verts.min().item(), self.verts.max().item())
         # ----------------------------------------------------
         # 3️⃣ Optional flip for top-left image origin
         # ----------------------------------------------------
