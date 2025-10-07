@@ -106,15 +106,12 @@ class SoftMeshRenderer(torch.nn.Module):
         # 7️⃣ Rasterization via Kaolin DIB-R
         # ----------------------------------------------------
         out = dibr(
-            H, W,
-            face_vertices_z,
-            face_vertices_xy,
-            ffeat,
-            normals_z,
-            rast_backend=7000,  # same as your pipeline
-            eps=0.02,
-            sigma=30,
-            gamma=1000.0
+            height=H,
+            width=W,
+            face_vertices_z=face_vertices_z,
+            face_vertices_image=face_vertices_xy,
+            face_features=ffeat,
+            face_normals_z=normals_z
         )
         rgb = out[0].permute(0, 3, 1, 2).clamp(0, 1)  # (B,3,H,W)
         sil = out[1].unsqueeze(1).clamp(0, 1)         # (B,1,H,W)
