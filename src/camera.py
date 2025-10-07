@@ -93,11 +93,6 @@ def compose_camera_object(cam, clip, H, W, strict=True):
     R_co = R_fix @ R_co
     t_co = R_fix @ t_co
 
-    if strict and not (t_co[2] > 0.0):
-        raise ValueError(
-            f"compose_camera_object: tz<=0 (tz={t_co[2]:.6f}). "
-            "Check camera conversion or your source JSON."
-        )
 
     return K.astype(np.float32), R_co.astype(np.float32), t_co.astype(np.float32)
 
