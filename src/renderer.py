@@ -122,6 +122,8 @@ class SoftMeshRenderer(torch.nn.Module):
         if not torch.isfinite(face_vertices_z).all():
             print("[WARN] Invalid z values (NaN/Inf) detected in renderer")
 
+        print("mean z:", v_cam[...,2].mean().item())
+
         return rgb, sil
 
 
