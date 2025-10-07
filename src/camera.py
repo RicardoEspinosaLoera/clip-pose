@@ -18,6 +18,13 @@ def _quat_wxyz_to_R(q):
 
 def _pyvista_cam_to_w2c(cam, H, W):
 
+    if all(k in cam for k in ('fx', 'fy', 'cx', 'cy')):
+        fx, fy, cx, cy = float(cam['fx']), float(cam['fy']), float(cam['cx']), float(cam['cy'])
+    else:
+        # Compute from PyVista's vertical FOV (default 30° if not specified)
+        view_angle = float(cam.get('view_angle', 30.0))
+        fx, fy, cx, cy = fov_to_intrinsics(view_angle, H, W)
+
     C = np.array(cam['position'], dtype=np.float32)
     F = np.array(cam['focal_point'], dtype=np.float32)
     U = np.array(cam['view_up'], dtype=np.float32)
