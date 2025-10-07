@@ -19,10 +19,10 @@ def save_or_log_overlay(I, I_comp, sil, rgb, M, out_dir, tag, step, to_wandb=Fal
     os.makedirs(out_dir, exist_ok=True)
     # I, I_comp: (B,3,H,W); sil, M: (B,1,H,W)
 
-    #print("I "+str(I[0].shape))
-    #print("I_comp "+str(I_comp[0].shape))
-    #print("I_sil "+str(sil[0].shape))
-    #print("I_M "+str(M[0].shape))
+    print("I "+str(I[0].shape))
+    print("I_comp "+str(I_comp[0].shape))
+    print("I_sil "+str(sil[0].shape))
+    print("I_M "+str(M[0].shape))
 
     #H, W = I.shape[-2], I.shape[-1]               # spatial dims only
     #I_comp_r = F.interpolate(I_comp, size=(H, W), mode='bilinear', align_corners=False).clamp(0, 1)
