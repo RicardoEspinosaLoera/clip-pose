@@ -6,6 +6,10 @@ from torch.utils.data import Dataset
 from .camera import compose_camera_object, _rescale_K  # re-use rescale_K if you downsample later
 import numpy as np
 
+def vtk_to_kaolin_pose(R, t):
+    # Flip Y,Z to convert from VTK to Kaolin (OpenGL-style)
+    R_fix = np.diag([1, -1, -1])
+    return R_fix @ R, R_fix @ t
 
 class TripletDataset(Dataset):
     def __init__(self, root, train=True, transform=None, strict_tz=True):
@@ -17,10 +21,7 @@ class TripletDataset(Dataset):
 
     def __len__(self): return len(self.items)
 
-    def vtk_to_kaolin_pose(self,R, t):
-        # Flip Y,Z to convert from VTK to Kaolin (OpenGL-style)
-        R_fix = np.diag([1, -1, -1])
-        return R_fix @ R, R_fix @ t
+
         
     def __getitem__(self, idx):
         jpath = self.items[idx]
