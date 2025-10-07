@@ -5,14 +5,6 @@ import torch
 from torch.utils.data import Dataset
 from .camera import compose_camera_object, _rescale_K  # re-use rescale_K if you downsample later
 
-def _to_3ch(img_np):
-    # Ensures HxWx3 (handles grayscale / RGBA)
-    if img_np.ndim == 2:
-        img_np = np.stack([img_np]*3, axis=-1)
-    if img_np.shape[-1] == 4:  # RGBA -> RGB
-        img_np = img_np[..., :3]
-    return img_np
-
 class TripletDataset(Dataset):
     def __init__(self, root, train=True, transform=None, strict_tz=True):
         self.root = root

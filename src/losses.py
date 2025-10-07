@@ -415,8 +415,12 @@ def pose_loss2(
 
     #R_pred_w2c, t_pred_w2c = cam2obj_to_world2cam(R_pred, t_pred)
     #R_gt_w2c,  t_gt_w2c    = cam2obj_to_world2cam(R_gt,  t_gt)
+    R_fix = torch.diag(torch.tensor([1.0, -1.0, -1.0], device=R_gt.device))
+    R_gt_fixed = R_fix @ R_gt
+    t_gt_fixed = R_fix @ t_gt
+    rgb_hat, sil_hat = renderer(R_gt_fixed, t_gt_fixed, K_use, image_size=(Hs, Ws))
 
-    rgb_hat, sil_hat = renderer(R_gt, t_gt, K_use, image_size=(Hs,Ws))
+    #rgb_hat, sil_hat = renderer(R_gt, t_gt, K_use, image_size=(Hs,Ws))
     
     # ---- differentiable render (Kaolin DIB-R) ----
     #rgb_hat, sil_hat = renderer(R_pred, t_render, K_use, image_size=(Hs, Ws))
