@@ -21,29 +21,31 @@ def _pyvista_cam_to_w2c(cam, H, W):
     Build Kaolin-style world→camera matrix from PyVista/VTK camera.
       - Converts VTK's +Y-up, -Z-forward to Kaolin's -Y-up, +Z-forward.
       - Ensures tz > 0 for visible objects.
-      - Pixel origin: top-left.
     """
 
     C = np.array(cam['position'],    dtype=np.float32)
     F = np.array(cam['focal_point'], dtype=np.float32)
     U = np.array(cam['view_up'],     dtype=np.float32)
 
-    # --- PyVista uses -Z forward, Kaolin expects +Z forward ---
-    forward = _normalize(F - C)       # VTK forward (toward -Z)
+    # VTK camera: looks along (F - C)
+    forward = _normalize(F - C)  # world-space direction of the camera's optical axis (−Z)
     right   = _normalize(np.cross(forward, U))
     up      = np.cross(right, forward)
 
-    # World→Camera (VTK-style)
-    R_c2w = np.stack([right, up, forward], axis=1)  # columns = camera axes
+    # --- Negate forward to match Kaolin's +Z convention ---
+    forward = -forward
+
+    # Camera-to-world, then world→camera
+    R_c2w = np.stack([right, up, forward], axis=1)
     R_w2c = R_c2w.T.copy()
     t_w2c = (-R_w2c @ C).astype(np.float32)
 
-    # --- Convert VTK → Kaolin coordinate system (+Z forward, -Y up) ---
+    # --- Apply VTK→Kaolin axis fix (+Z forward, -Y up) ---
     R_fix = np.diag([1.0, -1.0, -1.0]).astype(np.float32)
     R_w2c = R_fix @ R_w2c
     t_w2c = R_fix @ t_w2c
 
-    # --- Intrinsics ---
+    # Intrinsics
     if all(k in cam for k in ('fx', 'fy', 'cx', 'cy')):
         fx, fy, cx, cy = float(cam['fx']), float(cam['fy']), float(cam['cx']), float(cam['cy'])
     else:
@@ -58,6 +60,7 @@ def _pyvista_cam_to_w2c(cam, H, W):
                   [0.,  0.,  1.]], dtype=np.float32)
 
     return R_w2c, t_w2c, K
+
 
 
 def _world_obj_to_obj2cam(clip, R_w2c, t_w2c):
