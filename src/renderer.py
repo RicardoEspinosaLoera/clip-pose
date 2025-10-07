@@ -54,9 +54,9 @@ class SoftMeshRenderer(torch.nn.Module):
         # ----------------------------------------------------
         # If your dataset was generated using PyVista or VTK camera conventions
         # (+Y up, -Z forward), convert to Kaolin (+Z forward, -Y up)
-        R_fix = torch.diag(torch.tensor([1.0, -1.0, -1.0], device=R.device, dtype=R.dtype))
-        R = R @ R_fix
-        t = (t @ R_fix).clone()
+        #R_fix = torch.diag(torch.tensor([1.0, -1.0, -1.0], device=R.device, dtype=R.dtype))
+        #R = R @ R_fix
+        #t = (t @ R_fix).clone()
 
         # ----------------------------------------------------
         # 2️⃣ Transform vertices: world → camera → image
