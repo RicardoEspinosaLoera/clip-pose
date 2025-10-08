@@ -219,7 +219,7 @@ def run_epoch(model, renderer, loader, device, cfg, P_obj, D_obj, verts, mode,
         BG = batch['bg'].to(device)
         K  = batch['K'].to(device)
         M  = batch['mask'].to(device)
-        cam  = batch['cam']
+        #cam  = batch['cam']
 
         B = I.size(0)
         D_batch = torch.as_tensor(D_obj, device=device, dtype=I.dtype).expand(B)  # (B,)
@@ -252,7 +252,7 @@ def run_epoch(model, renderer, loader, device, cfg, P_obj, D_obj, verts, mode,
 
         """
         
-        loss, logs, I_comp, overlay, rgb = pose_loss2(R_pred, t_pred, R_gt, t_gt, D_batch, M, K, (H, W), renderer,BG,cam, λR=0.5, λt=0.5, λmask=1.0, λbce=1.0, λdice=0.5, λedge=0.1, mask_downsample=2)
+        loss, logs, I_comp, overlay, rgb = pose_loss2(R_pred, t_pred, R_gt, t_gt, D_batch, M, K, (H, W), renderer,BG, λR=0.5, λt=0.5, λmask=1.0, λbce=1.0, λdice=0.5, λedge=0.1, mask_downsample=2)
         
         if is_train:
             optimizer.zero_grad(set_to_none=True)

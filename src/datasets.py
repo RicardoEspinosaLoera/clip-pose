@@ -68,7 +68,7 @@ class TripletDataset(Dataset):
             'R_co': torch.from_numpy(R_co).float(),
             't_co': torch.from_numpy(t_co).float(),
             'stem': os.path.basename(stem),
-            'cam': meta['camera']
+            #'cam': meta['camera']
         }
 
         return sample
