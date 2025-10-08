@@ -63,8 +63,8 @@ class SoftMeshRenderer(torch.nn.Module):
         v_cam = torch.einsum('bij,vj->bvi', R, self.verts) + t[:, None, :]
         
         # Adjust Z-offset to center in frame
-        z_offset = torch.tensor([0., 0., 180.], device=device)[None, None, :]  # Increased from 100
-        v_cam = v_cam + z_offset
+        #z_offset = torch.tensor([0., 0., 180.], device=device)[None, None, :]  # Increased from 100
+        #v_cam = v_cam + z_offset
 
         # Center object in image plane
         H, W = int(image_size[0]), int(image_size[1])
