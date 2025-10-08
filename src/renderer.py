@@ -46,26 +46,14 @@ class SoftMeshRenderer(torch.nn.Module):
         device = self.verts.device
         R, t, K = R.to(device).float(), t.to(device).float(), K.to(device).float()
 
-        # --- Orientation correction (VTK -> Kaolin) ---
-        #R_fix = torch.diag(torch.tensor([1.0, -1.0, -1.0], device=R.device, dtype=R.dtype))
-        #R_fix = torch.diag(torch.tensor([1.0, -1.0, 1.0], device=R.device, dtype=R.dtype))
-       # --- Orientation correction (final tweak: roll around Z) ---
         R_fix = torch.tensor([
-            [ 1.0,  0.0,  0.0],
-            [ 0.0, -1.0,  0.0],
-            [ 0.0,  0.0,  1.0]
+            [1.,  0., 0.],
+            [0., -1., 0.],
+            [0.,  0., 1.]
         ], device=R.device, dtype=R.dtype)
 
         R = R @ R_fix
-
-        # Apply a 180° roll around Z to align image plane orientation
-        R_roll180 = torch.tensor([
-            [-1.0,  0.0,  0.0],
-            [ 0.0, -1.0,  0.0],
-            [ 0.0,  0.0,  1.0]
-        ], device=R.device, dtype=R.dtype)
-
-        R = R @ R_roll180
+        t = (R_fix @ t.T).T
 
         # Scale vertices to better fit image
         #scale = 0.15  # Increased from 0.1
