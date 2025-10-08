@@ -52,7 +52,7 @@ class SoftMeshRenderer(torch.nn.Module):
             [0.,  0., -1.]
             ], device=device, dtype=R.dtype)
 
-        R = R @ R_fix        # rotate into Kaolin frame
+        R = R_fix @ R        # rotate into Kaolin frame
         t = (R_fix @ t.T).T  # transform translation accordingly
 
         # Scale vertices to better fit image
