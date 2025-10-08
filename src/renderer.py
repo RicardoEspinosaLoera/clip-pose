@@ -47,27 +47,10 @@ class SoftMeshRenderer(torch.nn.Module):
         device = self.verts.device
         R, t, K = R.to(device).float(), t.to(device).float(), K.to(device).float()
 
-
-        # Transform from world to camera space 
-        # Note: We don't need R_fix since dataset already handles coordinate conversion
-        # Transform to camera space
+        # Transform vertices to camera space using GT poses directly
         v_cam = torch.einsum('bij,vj->bvi', R, self.verts) + t[:, None, :]
-
-        # Ensure points are in front of camera
-        z_offset = torch.tensor([0., 0., 100.], device=device)[None, None, :]
-        # Adjust Z-offset to center in frame
-        z_offset = torch.tensor([0., 0., 180.], device=device)[None, None, :]  # Increased from 100
-        v_cam = v_cam + z_offset
-
-        # Project to image space using dataset's camera intrinsics
-        # Center object in image plane
-        W , H  = image_size[1], image_size[0]
-        fx, fy = K[0,0,0], K[0,1,1]
-        cx, cy = K[0,0,2], K[0,1,2]
-        xy_offset = torch.tensor([(W/2 - cx)/fx, (H/2 - cy)/fy, 0.], device=device)[None, None, :]
-        v_cam = v_cam + xy_offset * v_cam[..., 2:3]  # Scale offset by depth
-
-        # Project to image space
+        
+        # Project to image space using provided intrinsics
         v_img = project_pixels(v_cam, K)
 
         # Debug prints
