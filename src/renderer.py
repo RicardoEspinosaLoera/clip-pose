@@ -60,7 +60,6 @@ class SoftMeshRenderer(torch.nn.Module):
         visible = ((u >= 0) & (u < W) & (v >= 0) & (v < H) & (v_cam[..., 2] > 0))
         print(f"Translation: {t[0]}")
         print(f"Z range: {v_cam[...,2].min().item():.2f} to {v_cam[...,2].max().item():.2f}")
-        print(f"UV range: ({u.min().item():.2f}, {u.max().item():.2f}), ({v.min().item():.2f}, {v.max().item():.2f})")
         print(f"Visible: {visible.float().mean().item()*100:.2f}%")
 
         # Prepare face buffers
