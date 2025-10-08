@@ -50,14 +50,13 @@ class SoftMeshRenderer(torch.nn.Module):
         #R_fix = torch.diag(torch.tensor([1.0, -1.0, -1.0], device=R.device, dtype=R.dtype))
         #R_fix = torch.diag(torch.tensor([1.0, -1.0, 1.0], device=R.device, dtype=R.dtype))
         R_fix = torch.tensor([
-            [ 1.0,  0.0,  0.0],
-            [ 0.0, -1.0,  0.0],
+            [-1.0,  0.0,  0.0],
+            [ 0.0,  1.0,  0.0],
             [ 0.0,  0.0, -1.0]
         ], device=R.device, dtype=R.dtype)
-        
 
-        R =  R @ R_fix
-        #t = (R_fix @ t.T).T
+        R = R @ R_fix
+        t = (R_fix @ t.T).T
 
 
         # Scale vertices to better fit image
