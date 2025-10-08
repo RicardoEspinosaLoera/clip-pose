@@ -148,7 +148,8 @@ class AddGaussianNoise(torch.nn.Module):
 
 
 def load_mesh(path, scale=1.0):
-    import trimesh, torch, numpy as np
+    import trimesh, torch, numpy as np, math
+
     m = trimesh.load(path, process=True)
     if isinstance(m, trimesh.Scene):
         # merge all geometries into one watertight-ish mesh
@@ -158,8 +159,19 @@ def load_mesh(path, scale=1.0):
     if not m.is_winding_consistent:
         m.fix_normals()
 
-    V = torch.tensor(m.vertices, dtype=torch.float32) * float(scale)   # (V,3)
-    F = torch.tensor(m.faces.astype(np.int64), dtype=torch.long)       # (F,3)
+    V = torch.tensor(m.vertices, dtype=torch.float32) * float(scale)
+    F = torch.tensor(m.faces.astype(np.int64), dtype=torch.long)
+
+    # --- PyVista (+Z up, +Y forward) → Kaolin (+Y up, +Z forward) ---
+    R_py2kai = torch.tensor([
+        [1.0,  0.0,  0.0],
+        [0.0,  0.0, -1.0],
+        [0.0,  1.0,  0.0]
+    ], dtype=torch.float32)
+
+    V = V @ R_py2kai.T          # rotate vertices
+    V -= V.mean(0, keepdim=True)  # recenter mesh pivot
+
     return V, F
 
 
@@ -340,26 +352,6 @@ def main(cfg_path='config.yaml'):
     #SCALE = cfg.get('mesh', {}).get('scale', 2.0)
     verts, faces = load_mesh('./meshes/Item.obj')
     faces = faces.long()
-
-    R_mesh_to_kaolin = torch.tensor([
-        [0,  0,  1],
-        [1,  0,  0],
-        [0,  1,  0]
-    ], dtype=torch.float32)
-
-    # --- extra 90° around Z to correct roll ---
-    theta = math.radians(90)   # try +90 first; if mirrored, change to -90
-    R_z90 = torch.tensor([
-        [math.cos(theta), -math.sin(theta), 0.0],
-        [math.sin(theta),  math.cos(theta), 0.0],
-        [0.0,              0.0,             1.0]
-    ], dtype=torch.float32)
-
-    R_total = R_mesh_to_kaolin @ R_z90
-
-    verts = verts @ R_total.T
-    center = verts.mean(0)
-    verts -= center
     verts, faces = verts.to(device), faces.to(device)
 
     
