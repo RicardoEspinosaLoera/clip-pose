@@ -44,12 +44,12 @@ class TripletDataset(Dataset):
             K, R_co, t_co = compose_camera_object(
                 meta['camera'], meta['clip'], H, W, strict=self.strict_tz
             )
-            R_xm90 = np.array([
+            R_xp90 = np.array([
                 [1,  0,  0],
-                [0,  0, -1],
-                [0,  1,  0]
+                [0,  0,  1],
+                [0, -1,  0]
             ], dtype=np.float32)
-            R_co = R_co @ R_xm90   # <-- try this first; if flipped, use R_xp90 below
+            R_co = R_co @ R_xp90
         except Exception as e:
             raise RuntimeError(f"[{os.path.basename(jpath)}] compose_camera_object failed: {e}")
 
