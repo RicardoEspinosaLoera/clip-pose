@@ -59,6 +59,10 @@ class SoftMeshRenderer(torch.nn.Module):
 
         # Center object in image plane
         W, H = image_size[1], image_size[0]
+        cx = K[0, 0, 2].item()
+        cy = K[0, 1, 2].item()
+        fx = K[0, 0, 0].item()
+        fy = K[0, 1, 1].item()
         xy_offset = torch.tensor([(W/2 - cx)/fx, (H/2 - cy)/fy, 0.], device=device)[None, None, :]
         v_cam = v_cam + xy_offset * v_cam[..., 2:3]  # Scale offset by depth
 
