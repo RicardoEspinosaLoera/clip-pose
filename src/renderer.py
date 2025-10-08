@@ -50,9 +50,9 @@ class SoftMeshRenderer(torch.nn.Module):
         #R_fix = torch.diag(torch.tensor([1.0, -1.0, -1.0], device=R.device, dtype=R.dtype))
         #R_fix = torch.diag(torch.tensor([1.0, -1.0, 1.0], device=R.device, dtype=R.dtype))
         R_fix = torch.tensor([
-            [-1.0,  0.0,  0.0],
+            [ 1.0,  0.0,  0.0],
             [ 0.0, -1.0,  0.0],
-            [ 0.0,  0.0,  1.0]
+            [ 0.0,  0.0, -1.0]
         ], device=R.device, dtype=R.dtype)
 
         R = R_fix @ R
