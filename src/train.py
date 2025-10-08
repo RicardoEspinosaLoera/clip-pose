@@ -340,7 +340,16 @@ def main(cfg_path='config.yaml'):
     SCALE = cfg.get('mesh', {}).get('scale', 2.0)
     verts, faces = load_mesh('./meshes/Item.obj', scale=SCALE)
     faces = faces.long()
+    R_py2kai = torch.tensor([
+        [1, 0, 0],
+        [0, 0, 1],
+        [0, -1, 0]
+    ], dtype=torch.float32)  # rotates Z-up -> Y-up
+
+    verts = (verts @ R_py2kai.T)
     verts, faces = verts.to(device), faces.to(device)
+    center = verts.mean(0)
+    verts -= center
     renderer = SoftMeshRenderer(verts, faces).to(device)
 
     with torch.no_grad():
