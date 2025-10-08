@@ -38,20 +38,30 @@ class SoftMeshRenderer(torch.nn.Module):
 
     def forward(self, R, t, K, image_size):
         """
-        Forward render pass using poses already in Kaolin coordinates.
-        Input format from JSON:
-        - R: clip.pose_se3.rotation (3x3 matrix)
-        - t: clip.pose_se3.translation_m (in meters)
-        - K: [fx≈1492.82, fy≈1015.12, cx=399.5, cy=271.5]
+        Forward render pass to match dataset ground truth
+        Dataset convention (from PyVista):
+        - World space: +X right, +Y up, +Z out of screen
         """
         B = R.shape[0]
         device = self.verts.device
         R, t, K = R.to(device).float(), t.to(device).float(), K.to(device).float()
 
-        # Direct transform to camera space - no coordinate conversion needed
-        v_cam = torch.einsum('bij,vj->bvi', R, self.verts) + t[:, None, :]
+        # Scale vertices to better fit image
+        scale = 0.15  # Increased from 0.1
+        scaled_verts = self.verts * scale
 
-        # Project to image space using provided K matrix
+        # Transform to camera space
+        v_cam = torch.einsum('bij,vj->bvi', R, scaled_verts) + t[:, None, :]
+        
+        # Adjust Z-offset to center in frame
+        z_offset = torch.tensor([0., 0., 180.], device=device)[None, None, :]  # Increased from 100
+        v_cam = v_cam + z_offset
+
+        # Center object in image plane
+        xy_offset = torch.tensor([(W/2 - cx)/fx, (H/2 - cy)/fy, 0.], device=device)[None, None, :]
+        v_cam = v_cam + xy_offset * v_cam[..., 2:3]  # Scale offset by depth
+
+        # Project to image space
         v_img = project_pixels(v_cam, K)
         H, W = int(image_size[0]), int(image_size[1])
         u, v = v_img[..., 0], v_img[..., 1]
