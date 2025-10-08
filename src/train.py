@@ -340,9 +340,16 @@ def main(cfg_path='config.yaml'):
     #SCALE = cfg.get('mesh', {}).get('scale', 2.0)
     verts, faces = load_mesh('./meshes/Item.obj')
     faces = faces.long()
-    verts, faces = verts.to(device), faces.to(device)
+    R_mesh_to_kaolin = torch.tensor([
+        [0,  0,  1],
+        [1,  0,  0],
+        [0,  1,  0]
+    ], dtype=torch.float32)
+
+    verts = verts @ R_mesh_to_kaolin.T
     center = verts.mean(0)
     verts -= center
+    verts, faces = verts.to(device), faces.to(device)
     renderer = SoftMeshRenderer(verts, faces).to(device)
 
     with torch.no_grad():
