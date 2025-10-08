@@ -1,86 +1,112 @@
-# src/renderer.py
 import torch
 from kaolin.render.mesh import dibr_rasterization as dibr
 from kaolin.ops.mesh import index_vertices_by_faces
 
+DEBUG_ONCE = {"done": False}
+
 def pixels_to_ndc(x, y, H, W):
-    """Convert pixel centers (x,y) to NDC in [-1,1]."""
+    # pixel center -> NDC in [-1, 1]; top-left origin to center origin
     x_ndc = (x + 0.5) / W * 2.0 - 1.0
     y_ndc = (y + 0.5) / H * 2.0 - 1.0
     return x_ndc, y_ndc
 
-
 def project_pixels(verts_cam, K):
-    """Project 3D camera-space verts -> image (u,v,z)."""
     Z  = verts_cam[..., 2:3].clamp(min=1e-6)
     xy = verts_cam[..., :2] / Z
-    fx, fy = K[:, 0, 0].view(-1, 1, 1), K[:, 1, 1].view(-1, 1, 1)
-    cx, cy = K[:, 0, 2].view(-1, 1, 1), K[:, 1, 2].view(-1, 1, 1)
+    fx = K[:, 0, 0].view(-1, 1, 1)
+    fy = K[:, 1, 1].view(-1, 1, 1)
+    cx = K[:, 0, 2].view(-1, 1, 1)
+    cy = K[:, 1, 2].view(-1, 1, 1)
     u = fx * xy[..., 0:1] + cx
     v = fy * xy[..., 1:2] + cy
-    return torch.cat([u, v, Z], dim=-1)   # (B,V,3)  [u,v,z]
+    return torch.cat([u, v, Z], dim=-1)  # (B,V,3) [u,v,z]
 
 
 class SoftMeshRenderer(torch.nn.Module):
-    """
-    Kaolin-style differentiable renderer.
-      - Kaolin convention: +Z forward, tz > 0
-      - Pixel origin: top-left (no v-flip)
-    """
-    def __init__(self, verts, faces, per_vertex_rgb=None):
+    def __init__(self, verts, faces, per_vertex_rgb=None, negate_z=False, flip_v=False):
         super().__init__()
-        self.register_buffer('verts', verts.float())
+        self.register_buffer('verts', verts)                 # (V,3)
         self.register_buffer('faces', faces.long())
+        #self.register_buffer('faces', faces.int())           # (F,3)
         if per_vertex_rgb is None:
             per_vertex_rgb = torch.ones_like(verts) * 0.75
-        self.register_buffer('v_rgb', per_vertex_rgb.float())
+        self.register_buffer('v_rgb', per_vertex_rgb)        # (V,3)
+        self.negate_z = negate_z
+        self.flip_v = flip_v   # flip pixel y (v) => v' = H-1 - v
+        self.register_buffer('faces', faces.long())   # int64 for indexing
 
-    # ------------------------------------------------------------------
+
     def forward(self, R, t, K, image_size):
         """
-        Args:
-            R: (B,3,3) object→camera rotation
-            t: (B,3)   object→camera translation
-            K: (B,3,3) intrinsics
-            image_size: (H,W)
-        Returns:
-            rgb: (B,3,H,W)
-            sil: (B,1,H,W)
+        Forward render pass (Kaolin DIB-R backend)
+        Supports PyVista → Kaolin coordinate conversion:
+        - Kaolin convention: +Z forward, -Y up
+        - Visible faces have z > 0
+        - Pixel origin: top-left (optional flip_v)
         """
-        B, H, W = R.shape[0], int(image_size[0]), int(image_size[1])
+        B = R.shape[0]
         device = self.verts.device
-        R, t, K = R.to(device), t.to(device), K.to(device)
+        R, t, K = R.to(device).float(), t.to(device).float(), K.to(device).float()
 
-        # 1️⃣ Transform vertices to camera space
-        v_cam = torch.einsum('bij,vj->bvi', R, self.verts) + t[:, None, :]
 
-        # 2️⃣ Project to image plane
-        v_img = project_pixels(v_cam, K)  # (B,V,3) [u,v,z]
+        # ----------------------------------------------------
+        # 2️⃣ Transform vertices: world → camera → image
+        # ----------------------------------------------------
+        v_cam = torch.einsum('bij,vj->bvi', R, self.verts) + t[:, None, :]   # (B,V,3)
+        v_img = project_pixels(v_cam, K)                                     # (B,V,3) [u,v,z]
 
-        # 3️⃣ Keep only positive-z verts (in front of camera)
-        z_mean = v_cam[..., 2].mean().item()
-        if z_mean <= 0:
-            print(f"[WARN] mean z ≤ 0: {z_mean:.4f}")
+        H, W = int(image_size[0]), int(image_size[1])
+        u, v = v_img[..., 0], v_img[..., 1]
+        print(
+            "u range:", u.min().item(), u.max().item(),
+            "v range:", v.min().item(), v.max().item()
+        )
 
-        # 4️⃣ Gather per-face data
-        faces = self.faces
+        visible = ((u >= 0) & (u < W) & (v >= 0) & (v < H) & (v_cam[..., 2] > 0))
+        print("visible vertices:", visible.float().mean().item() * 100, "%")
+
+        H, W = int(image_size[0]), int(image_size[1])
+
+        print("verts range (min,max):", self.verts.min().item(), self.verts.max().item())
+        # ----------------------------------------------------
+        # 3️⃣ Optional flip for top-left image origin
+        # ----------------------------------------------------
+        if getattr(self, "flip_v", False):
+            v_img[..., 1] = (H - 1) - v_img[..., 1]
+
+        # ----------------------------------------------------
+        # 4️⃣ Prepare per-face buffers
+        # ----------------------------------------------------
+        faces = self.faces  # (F,3)
         fvcam = index_vertices_by_faces(v_cam, faces)  # (B,F,3,3)
-        fvimg = index_vertices_by_faces(v_img, faces)
-        vfeat = self.v_rgb[None].expand(B, -1, -1)
-        ffeat = index_vertices_by_faces(vfeat, faces)
+        fvimg = index_vertices_by_faces(v_img, faces)  # (B,F,3,3)
 
-        # 5️⃣ Prepare DIB-R inputs (NDC coords)
+        vfeat = self.v_rgb[None].expand(B, -1, -1)     # (B,V,3)
+        ffeat = index_vertices_by_faces(vfeat, faces)  # (B,F,3,3)
+
+        # ----------------------------------------------------
+        # 5️⃣ Depth, screen coords, and NDC
+        # ----------------------------------------------------
         face_vertices_z = fvcam[..., 2]  # (B,F,3)
-        u_pix, v_pix = fvimg[..., 0], fvimg[..., 1]
-        u_ndc, v_ndc = pixels_to_ndc(u_pix, v_pix, H, W)
-        face_vertices_image = torch.stack([u_ndc, v_ndc], dim=-1)
+        if getattr(self, "negate_z", False):
+            face_vertices_z = -face_vertices_z
 
-        # 6️⃣ Face normals (for weighting)
+        u_pix, v_pix = fvimg[..., 0], fvimg[..., 1]
+        u_ndc = (u_pix + 0.5) / W * 2.0 - 1.0
+        v_ndc = (v_pix + 0.5) / H * 2.0 - 1.0
+        face_vertices_xy = torch.stack([u_ndc, v_ndc], dim=-1)  # (B,F,3,2)
+
+        # ----------------------------------------------------
+        # 6️⃣ Face normals (double-sided)
+        # ----------------------------------------------------
         v0, v1, v2 = fvcam[:, :, 0, :], fvcam[:, :, 1, :], fvcam[:, :, 2, :]
         n = torch.cross(v1 - v0, v2 - v0, dim=-1)
         n = torch.nn.functional.normalize(n, dim=-1)
         normals_z = n[..., 2].abs().unsqueeze(-1).expand(-1, -1, 3)
 
+        # ----------------------------------------------------
+        # 7️⃣ Rasterization via Kaolin DIB-R
+        # ----------------------------------------------------
         out = dibr(
             height=H,
             width=W,
@@ -91,5 +117,13 @@ class SoftMeshRenderer(torch.nn.Module):
         )
         rgb = out[0].permute(0, 3, 1, 2).clamp(0, 1)  # (B,3,H,W)
         sil = out[1].unsqueeze(1).clamp(0, 1)         # (B,1,H,W)
+
+        # ----------------------------------------------------
+        # 8️⃣ Debug: check mean depth and validity
+        # ----------------------------------------------------
+        if not torch.isfinite(face_vertices_z).all():
+            print("[WARN] Invalid z values (NaN/Inf) detected in renderer")
+
+        print("mean z:", v_cam[...,2].mean().item())
 
         return rgb, sil
