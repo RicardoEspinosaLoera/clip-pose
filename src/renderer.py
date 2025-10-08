@@ -38,85 +38,44 @@ class SoftMeshRenderer(torch.nn.Module):
 
     def forward(self, R, t, K, image_size):
         """
-        Forward render pass to match dataset ground truth.
-        - Z range typically 40-200m
-        - Translations are in world coordinates
-        - Camera matrix: fx≈1492.82, fy≈1015.12, cx=399.5, cy=271.5
+        Forward render pass to match PyVista ground truth renders.
+        PyVista setup:
+        - Camera at position looking at focal_point
+        - World coordinates: +X right, +Y up, +Z out of screen
+        - Image size: 800x544
         """
         B = R.shape[0]
         device = self.verts.device
         R, t, K = R.to(device).float(), t.to(device).float(), K.to(device).float()
 
-        # Transform to camera space
+        # Transform vertices to camera space without any adjustments
         v_cam = torch.einsum('bij,vj->bvi', R, self.verts) + t[:, None, :]
         
-        # Project to image space
+        # Project to image space using exact camera matrix
         v_img = project_pixels(v_cam, K)
         H, W = int(image_size[0]), int(image_size[1])
         u, v = v_img[..., 0], v_img[..., 1]
 
-        # Adjust pose only if object is significantly out of frame
+        # Debug info (only essential info)
         visible = ((u >= 0) & (u < W) & (v >= 0) & (v < H) & (v_cam[..., 2] > 0))
-        vis_percent = visible.float().mean()
-        
-        if vis_percent < 0.15:  # Less than 15% visible
-            # Calculate center offset in image space
-            u_center = (u.max() + u.min()) / 2
-            v_center = (v.max() + v.min()) / 2
-            
-            # Convert pixel offset to world space, scaled by depth
-            mean_z = v_cam[..., 2].mean()
-            dx = (W/2 - u_center) / K[0,0,0] * mean_z
-            dy = (H/2 - v_center) / K[0,1,1] * mean_z
-            
-            # Apply translation adjustment
-            t_adj = torch.tensor([dx, dy, 0.], device=device)[None, :]
-            t = t + t_adj
-            
-            # Recompute with adjusted translation
-            v_cam = torch.einsum('bij,vj->bvi', R, self.verts) + t[:, None, :]
-            v_img = project_pixels(v_cam, K)
-
-        # Debug info (reduce duplicate prints)
-        print(f"Camera matrix K:")
-        print(f"fx, fy, cx, cy = {K[0,0,0].item():.4f} {K[0,1,1].item():.4f} {K[0,0,2].item():.4f} {K[0,1,2].item():.4f}")
         print(f"Translation: {t[0]}")
-        print(f"v_cam z range: {v_cam[...,2].min().item():.2f} to {v_cam[...,2].max().item():.2f}")
-        print(f"Visible vertices: {visible.float().mean().item()*100:.2f}%")
+        print(f"Z range: {v_cam[...,2].min().item():.2f} to {v_cam[...,2].max().item():.2f}")
+        print(f"UV range: ({u.min().item():.2f}, {u.max().item():.2f}), ({v.min().item():.2f}, {v.max().item():.2f})")
+        print(f"Visible: {visible.float().mean().item()*100:.2f}%")
 
-        # Debug prints
-        print(f"Camera matrix K:")
-        print(f"fx, fy, cx, cy = {K[0,0,0].item():.4f} {K[0,1,1].item():.4f} {K[0,0,2].item():.4f} {K[0,1,2].item():.4f}")
-        print(f"v_cam z range: {v_cam[...,2].min().item():.2f} to {v_cam[...,2].max().item():.2f}")
+        # Remove all pose adjustments and centering code
+        # Let the GT poses control everything
 
-        H, W = int(image_size[0]), int(image_size[1])
-        u, v = v_img[..., 0], v_img[..., 1]
-        print(
-            "u range:", u.min().item(), u.max().item(),
-            "v range:", v.min().item(), v.max().item()
-        )
-
-        visible = ((u >= 0) & (u < W) & (v >= 0) & (v < H) & (v_cam[..., 2] > 0))
-        print("visible vertices:", visible.float().mean().item() * 100, "%")
-
-        H, W = int(image_size[0]), int(image_size[1])
-
-        print("verts range (min,max):", self.verts.min().item(), self.verts.max().item())
-        # ----------------------------------------------------
-        # 3️⃣ Optional flip for top-left image origin
-        # ----------------------------------------------------
-        if getattr(self, "flip_v", False):
+        # Original rendering pipeline
+        if self.flip_v:
             v_img[..., 1] = (H - 1) - v_img[..., 1]
 
-        # ----------------------------------------------------
-        # 4️⃣ Prepare per-face buffers
-        # ----------------------------------------------------
-        faces = self.faces  # (F,3)
-        fvcam = index_vertices_by_faces(v_cam, faces)  # (B,F,3,3)
-        fvimg = index_vertices_by_faces(v_img, faces)  # (B,F,3,3)
-
-        vfeat = self.v_rgb[None].expand(B, -1, -1)     # (B,V,3)
-        ffeat = index_vertices_by_faces(vfeat, faces)  # (B,F,3,3)
+        # Prepare face buffers
+        faces = self.faces
+        fvcam = index_vertices_by_faces(v_cam, faces)
+        fvimg = index_vertices_by_faces(v_img, faces)
+        vfeat = self.v_rgb[None].expand(B, -1, -1)
+        ffeat = index_vertices_by_faces(vfeat, faces)
 
         # ----------------------------------------------------
         # 5️⃣ Depth, screen coords, and NDC
