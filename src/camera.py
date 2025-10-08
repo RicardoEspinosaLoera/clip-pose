@@ -15,9 +15,16 @@ def _quat_wxyz_to_R(q):
         [2*(x*z - y*w),     2*(y*z + z*w),     1 - 2*(x*x + y*y)]
     ], dtype=np.float32)
 
-# -------------------------------------------------------------------
-# ✅ New: Kaolin-friendly camera/object composition
-# -------------------------------------------------------------------
+def _rescale_K(K, Hsrc, Wsrc, Hdst, Wdst):
+    if (Hsrc, Wsrc) == (Hdst, Wdst):
+        return K.astype(np.float32)
+    sx = float(Wdst) / float(Wsrc)
+    sy = float(Hdst) / float(Hsrc)
+    K2 = K.copy().astype(np.float32)
+    K2[0, 0] *= sx; K2[0, 2] *= sx
+    K2[1, 1] *= sy; K2[1, 2] *= sy
+    return K2
+    
 def _kaolin_cam_to_K(cam):
     """Reads Kaolin-style intrinsics."""
     fx, fy, cx, cy = float(cam["fx"]), float(cam["fy"]), float(cam["cx"]), float(cam["cy"])
