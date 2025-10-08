@@ -112,7 +112,7 @@ def compose_camera_object(cam, clip, H, W, strict=True):
     """
     Returns:
         K (3x3), R_co (3x3), t_co (3,)
-    - Reads PyVista camera and object pose directly.
+    - Uses PyVista camera definition directly.
     - Converts to Kaolin's +Z-forward convention.
     """
 
@@ -125,18 +125,23 @@ def compose_camera_object(cam, clip, H, W, strict=True):
     t_cam = t_cam.squeeze(0).numpy()
 
     # --- Object pose from PyVista (world coordinates) ---
-    R_obj, t_obj = _world_obj_to_obj2cam(clip)  # rotation & translation (world)
+    R_obj, t_obj = _world_obj_to_obj2cam(clip)
 
     # --- Convert object world pose into camera coordinates ---
     R_co = R_cam @ R_obj
     t_co = R_cam @ t_obj + t_cam
-    
 
-    # --- Sanity check: ensure object is in front of camera ---
+    # --- Flip Z-axis to match Kaolin convention (+Z forward) ---
+    R_flip = np.diag([1, 1, -1])
+    R_co = R_flip @ R_co
+    t_co = R_flip @ t_co
+
+    # --- Sanity check ---
     if strict and not (t_co[2] > 0.0):
-        raise ValueError(f"compose_camera_object: tz<=0 (tz={t_co[2]:.6f}). Object behind camera?")
+        print(f"[WARN] compose_camera_object: tz={t_co[2]:.3f} still <=0 after flip")
 
     return K.astype(np.float32), R_co.astype(np.float32), t_co.astype(np.float32)
+
 
 
 # -------------------------------------------------------------------

@@ -63,105 +63,88 @@ class SoftMeshRenderer(torch.nn.Module):
         self.register_buffer('faces', faces.long())   # int64 for indexing
 
 
-    def forward(self, R, t, K, image_size):
-        """
-        Forward render pass to match dataset ground truth
-        Dataset convention (from PyVista):
-        - World space: +X right, +Y up, +Z out of screen
-        """
-        B = R.shape[0]
-        device = self.verts.device
-        R, t, K = R.to(device).float(), t.to(device).float(), K.to(device).float()
+def forward(self, R, t, K, image_size):
+    """
+    Forward render pass to match dataset ground truth.
 
-        #R_fix = torch.tensor([
-        #    [1.0,  0.0,  0.0],
-        #    [0.0,  -1.0,  0.0],
-        #    [0.0,  0.0, -1.0]
-        #    ], device=device, dtype=R.dtype)
+    Assumes R and t are already in Kaolin coordinate convention (+Z forward)
+    as provided by compose_camera_object().
 
-        #R = R_fix @ R        # rotate into Kaolin frame
-        #t = t  # transform translation accordingly
-        #R, t = camera_extrinsics_from_pyvista(v_cam,device)
+    Dataset convention (originally from PyVista):
+    - World space: +X right, +Y up, +Z out of screen
+    - Conversion to Kaolin is handled externally.
+    """
+    B = R.shape[0]
+    device = self.verts.device
+    R, t, K = R.to(device).float(), t.to(device).float(), K.to(device).float()
 
-        # Scale vertices to better fit image
-        #scale = 0.15  # Increased from 0.1
-        #scaled_verts = self.verts * scale
+    # ----------------------------------------------------
+    # 1️⃣ Transform mesh vertices into camera space
+    # ----------------------------------------------------
+    v_cam = torch.einsum('bij,vj->bvi', R, self.verts) + t[:, None, :]
 
-        # Transform to camera space
-        v_cam = torch.einsum('bij,vj->bvi', R, self.verts) + t[:, None, :]
-        #v_cam[..., 2] *= -1  # look along -Z
-        
-        # Adjust Z-offset to center in frame
-        #z_offset = torch.tensor([0., 0., 180.], device=device)[None, None, :]  # Increased from 100
-        #v_cam = v_cam + z_offset
+    # ----------------------------------------------------
+    # 2️⃣ Project to image space using intrinsics
+    # ----------------------------------------------------
+    v_img = project_pixels(v_cam, K)
+    u, v = v_img[..., 0], v_img[..., 1]
 
-        # Center object in image plane
-        H, W = int(image_size[0]), int(image_size[1])
-        cx, cy = K[0, 0, 2].item(), K[0, 1, 2].item()
-        fx, fy = K[0, 0, 0].item(), K[0, 1, 1].item()
-        
-        xy_offset = torch.tensor([(W/2 - cx)/fx, (H/2 - cy)/fy, 0.], device=device)[None, None, :]
-        v_cam = v_cam + xy_offset * v_cam[..., 2:3]  # Scale offset by depth
+    # ----------------------------------------------------
+    # 3️⃣ Debug info (optional)
+    # ----------------------------------------------------
+    H, W = int(image_size[0]), int(image_size[1])
+    visible = ((u >= 0) & (u < W) & (v >= 0) & (v < H) & (v_cam[..., 2] > 0))
+    print(f"Translation: {t[0]}")
+    print(f"Rotation: {R[0]}")
+    print(f"Z range: {v_cam[..., 2].min().item():.2f} to {v_cam[..., 2].max().item():.2f}")
+    print(f"Visible: {visible.float().mean().item() * 100:.2f}%")
 
-        # Project to image space
-        v_img = project_pixels(v_cam, K)
-        
-        u, v = v_img[..., 0], v_img[..., 1]
+    # ----------------------------------------------------
+    # 4️⃣ Prepare face and feature buffers
+    # ----------------------------------------------------
+    faces = self.faces
+    fvcam = index_vertices_by_faces(v_cam, faces)
+    fvimg = index_vertices_by_faces(v_img, faces)
+    vfeat = self.v_rgb[None].expand(B, -1, -1)
+    ffeat = index_vertices_by_faces(vfeat, faces)
 
-        # Debug info
-        visible = ((u >= 0) & (u < W) & (v >= 0) & (v < H) & (v_cam[..., 2] > 0))
-        print(f"Translation: {t[0]}")
-        print(f"Rotation: {R[0]}")
-        print(f"Z range: {v_cam[...,2].min().item():.2f} to {v_cam[...,2].max().item():.2f}")
-        print(f"Visible: {visible.float().mean().item()*100:.2f}%")
+    # ----------------------------------------------------
+    # 5️⃣ Depth, screen coords, and NDC
+    # ----------------------------------------------------
+    face_vertices_z = fvcam[..., 2]  # (B,F,3)
+    u_pix, v_pix = fvimg[..., 0], fvimg[..., 1]
+    u_ndc = (u_pix + 0.5) / W * 2.0 - 1.0
+    v_ndc = (v_pix + 0.5) / H * 2.0 - 1.0
+    face_vertices_xy = torch.stack([u_ndc, v_ndc], dim=-1)  # (B,F,3,2)
 
-        # Prepare face buffers
-        faces = self.faces
-        fvcam = index_vertices_by_faces(v_cam, faces)
-        fvimg = index_vertices_by_faces(v_img, faces)
-        vfeat = self.v_rgb[None].expand(B, -1, -1)
-        ffeat = index_vertices_by_faces(vfeat, faces)
+    # ----------------------------------------------------
+    # 6️⃣ Face normals (double-sided shading)
+    # ----------------------------------------------------
+    v0, v1, v2 = fvcam[:, :, 0, :], fvcam[:, :, 1, :], fvcam[:, :, 2, :]
+    n = torch.cross(v1 - v0, v2 - v0, dim=-1)
+    n = torch.nn.functional.normalize(n, dim=-1)
+    normals_z = n[..., 2].abs().unsqueeze(-1).expand(-1, -1, 3)
 
-        # ----------------------------------------------------
-        # 5️⃣ Depth, screen coords, and NDC
-        # ----------------------------------------------------
-        face_vertices_z = fvcam[..., 2]  # (B,F,3)
-        #if getattr(self, "negate_z", False):
-        #    face_vertices_z = -face_vertices_z
+    # ----------------------------------------------------
+    # 7️⃣ Rasterization via Kaolin DIB-R
+    # ----------------------------------------------------
+    out = dibr(
+        height=H,
+        width=W,
+        face_vertices_z=face_vertices_z,
+        face_vertices_image=face_vertices_xy,
+        face_features=ffeat,
+        face_normals_z=normals_z
+    )
+    rgb = out[0].permute(0, 3, 1, 2).clamp(0, 1)  # (B,3,H,W)
+    sil = out[1].unsqueeze(1).clamp(0, 1)         # (B,1,H,W)
 
-        u_pix, v_pix = fvimg[..., 0], fvimg[..., 1]
-        u_ndc = (u_pix + 0.5) / W * 2.0 - 1.0
-        v_ndc = (v_pix + 0.5) / H * 2.0 - 1.0
-        face_vertices_xy = torch.stack([u_ndc, v_ndc], dim=-1)  # (B,F,3,2)
+    # ----------------------------------------------------
+    # 8️⃣ Check validity
+    # ----------------------------------------------------
+    if not torch.isfinite(face_vertices_z).all():
+        print("[WARN] Invalid z values (NaN/Inf) detected in renderer")
 
-        # ----------------------------------------------------
-        # 6️⃣ Face normals (double-sided)
-        # ----------------------------------------------------
-        v0, v1, v2 = fvcam[:, :, 0, :], fvcam[:, :, 1, :], fvcam[:, :, 2, :]
-        n = torch.cross(v1 - v0, v2 - v0, dim=-1)
-        n = torch.nn.functional.normalize(n, dim=-1)
-        normals_z = n[..., 2].abs().unsqueeze(-1).expand(-1, -1, 3)
+    print("mean z:", v_cam[..., 2].mean().item())
 
-        # ----------------------------------------------------
-        # 7️⃣ Rasterization via Kaolin DIB-R
-        # ----------------------------------------------------
-        out = dibr(
-            height=H,
-            width=W,
-            face_vertices_z=face_vertices_z,
-            face_vertices_image=face_vertices_xy,
-            face_features=ffeat,
-            face_normals_z=normals_z
-        )
-        rgb = out[0].permute(0, 3, 1, 2).clamp(0, 1)  # (B,3,H,W)
-        sil = out[1].unsqueeze(1).clamp(0, 1)         # (B,1,H,W)
-
-        # ----------------------------------------------------
-        # 8️⃣ Debug: check mean depth and validity
-        # ----------------------------------------------------
-        if not torch.isfinite(face_vertices_z).all():
-            print("[WARN] Invalid z values (NaN/Inf) detected in renderer")
-
-        print("mean z:", v_cam[...,2].mean().item())
-
-        return rgb, sil
+    return rgb, sil
