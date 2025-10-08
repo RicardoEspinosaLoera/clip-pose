@@ -49,14 +49,24 @@ class SoftMeshRenderer(torch.nn.Module):
         # --- Orientation correction (VTK -> Kaolin) ---
         #R_fix = torch.diag(torch.tensor([1.0, -1.0, -1.0], device=R.device, dtype=R.dtype))
         #R_fix = torch.diag(torch.tensor([1.0, -1.0, 1.0], device=R.device, dtype=R.dtype))
+       # --- Orientation correction (final tweak: roll around Z) ---
         R_fix = torch.tensor([
             [-1.0,  0.0,  0.0],
             [ 0.0,  1.0,  0.0],
             [ 0.0,  0.0, -1.0]
         ], device=R.device, dtype=R.dtype)
 
+        # Apply the axis flips
         R = R @ R_fix
-        #t = (R_fix @ t.T).T
+
+        # Add a 90° roll around Z to match PyVista's camera up direction
+        R_roll90 = torch.tensor([
+            [0.0, -1.0, 0.0],
+            [1.0,  0.0, 0.0],
+            [0.0,  0.0, 1.0]
+        ], device=R.device, dtype=R.dtype)
+
+        R = R @ R_roll90
 
 
         # Scale vertices to better fit image
