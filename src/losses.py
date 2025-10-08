@@ -1,7 +1,7 @@
+# ---------- FAST Δ CALIBRATION (one-time, cached) ----------
 import math
 import torch
 import torch.nn.functional as F
-from src.camera import camera_extrinsics_from_pyvista
 
 _RAD2DEG = 57.29577951308232
 
@@ -377,7 +377,7 @@ def so3_reg(R):
 
 def pose_loss2(
     R_pred, t_pred, R_gt, t_gt, D_obj,
-    M, K, image_size, renderer, BG,cam,
+    M, K, image_size, renderer, BG,
     λR=0.5, λt=0.5,
     λmask=1.0, λbce=1.0, λdice=0.5, λedge=0.0,
     mask_downsample=1, z_min=1e-2, z_max=None,
@@ -398,8 +398,7 @@ def pose_loss2(
 
     # Make K consistent with render size
     K_use = K
-
-    R, t = camera_extrinsics_from_pyvista(cam, R_pred.device)
+    
     #Check if render using Kaolin is the same as Pyvista
     rgb_hat, sil_hat = renderer(R_gt, t_gt, K_use, image_size=(Hs,Ws))
     

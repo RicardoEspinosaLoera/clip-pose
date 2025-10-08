@@ -102,19 +102,35 @@ def _world_obj_to_obj2cam(clip):
     else:
         raise KeyError("clip must contain rotation/translation in pose_se3.")
 
-def compose_camera_object(cam, clip, H, W, strict=True):
+def compose_camera_object(cam, clip, H, W, device="cuda", strict=True):
     """
-    Returns: K (3x3), R_co (3x3), t_co (3,)
-    - Compatible with Kaolin ground truth generator.
-    - K is directly read from JSON (no PyVista conversion).
+    Returns: 
+        K (3x3), R_co (3x3), t_co (3,)
+    - Uses PyVista camera definition directly.
+    - Converts to Kaolin's +Z-forward convention.
     """
-    K = _kaolin_cam_to_K(cam)
-    R_co, t_co = _world_obj_to_obj2cam(clip)
 
+    # --- Intrinsics ---
+    K = _kaolin_cam_to_K(cam)
+
+    # --- Camera extrinsics from PyVista world -> Kaolin camera space ---
+    R_cam, t_cam = camera_extrinsics_from_pyvista(cam, device)
+    R_cam = R_cam.squeeze(0).cpu().numpy()
+    t_cam = t_cam.squeeze(0).cpu().numpy()
+
+    # --- Object pose from PyVista (world coordinates) ---
+    R_obj, t_obj = _world_obj_to_obj2cam(clip)   # rotation and translation in WORLD (PyVista)
+
+    # --- Convert object world pose into camera coordinates ---
+    R_co = R_cam @ R_obj
+    t_co = R_cam @ t_obj + t_cam
+
+    # --- Sanity check ---
     if strict and not (t_co[2] > 0.0):
         raise ValueError(f"compose_camera_object: tz<=0 (tz={t_co[2]:.6f}). Object behind camera?")
 
     return K.astype(np.float32), R_co.astype(np.float32), t_co.astype(np.float32)
+
 
 # -------------------------------------------------------------------
 # Rotation 6D → Matrix (unchanged)

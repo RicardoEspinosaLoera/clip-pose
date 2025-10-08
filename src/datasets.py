@@ -40,7 +40,6 @@ class TripletDataset(Dataset):
         with open(jpath, 'r') as f:
             meta = json.load(f)
 
-        # --- Compose Kaolin-friendly GT (direct use) ---
         try:
             K, R_co, t_co = compose_camera_object(
                 meta['camera'], meta['clip'], H, W, strict=self.strict_tz
