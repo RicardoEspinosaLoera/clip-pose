@@ -56,7 +56,7 @@ class SoftMeshRenderer(torch.nn.Module):
         ], device=R.device, dtype=R.dtype)
 
         R = R @ R_fix
-        t = (R_fix @ t.T).T
+        #t = (R_fix @ t.T).T
 
 
         # Scale vertices to better fit image
