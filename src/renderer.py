@@ -47,8 +47,8 @@ class SoftMeshRenderer(torch.nn.Module):
         R, t, K = R.to(device).float(), t.to(device).float(), K.to(device).float()
 
         R_fix = torch.tensor([
-            [-1.0,  0.0,  0.0],
-            [0.0,  1.0,  0.0],
+            [1.0,  0.0,  0.0],
+            [0.0,  -1.0,  0.0],
             [0.0,  0.0, -1.0]
             ], device=device, dtype=R.dtype)
 
