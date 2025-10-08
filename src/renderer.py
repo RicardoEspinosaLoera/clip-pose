@@ -56,8 +56,8 @@ class SoftMeshRenderer(torch.nn.Module):
         t = (R_fix @ t.T).T
 
         # Scale vertices to better fit image
-        #scale = 0.15  # Increased from 0.1
-        #scaled_verts = self.verts * scale
+        scale = 0.15  # Increased from 0.1
+        scaled_verts = self.verts * scale
 
         # Transform to camera space
         v_cam = torch.einsum('bij,vj->bvi', R, self.verts) + t[:, None, :]
