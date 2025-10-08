@@ -33,7 +33,7 @@ def _kaolin_cam_to_K(cam):
                   [0.,  0.,  1.]], dtype=np.float32)
     return K
 
-def camera_extrinsics_from_pyvista(cam, device):
+def camera_extrinsics_from_pyvista(cam):
     """
     Converts a PyVista-style camera definition to Kaolin-compatible extrinsics.
 
@@ -75,8 +75,8 @@ def camera_extrinsics_from_pyvista(cam, device):
     R_final = R_fix @ R_w2c
     t_final = R_fix @ t_w2c
 
-    R = torch.from_numpy(R_final).to(device).float().unsqueeze(0)
-    t = torch.from_numpy(t_final).to(device).float().unsqueeze(0)
+    R = torch.from_numpy(R_final).float().unsqueeze(0)
+    t = torch.from_numpy(t_final).float().unsqueeze(0)
 
     return R, t
 
@@ -102,7 +102,7 @@ def _world_obj_to_obj2cam(clip):
     else:
         raise KeyError("clip must contain rotation/translation in pose_se3.")
 
-def compose_camera_object(cam, clip, H, W, device="cuda", strict=True):
+def compose_camera_object(cam, clip, H, W, strict=True):
     """
     Returns: 
         K (3x3), R_co (3x3), t_co (3,)
@@ -114,7 +114,7 @@ def compose_camera_object(cam, clip, H, W, device="cuda", strict=True):
     K = _kaolin_cam_to_K(cam)
 
     # --- Camera extrinsics from PyVista world -> Kaolin camera space ---
-    R_cam, t_cam = camera_extrinsics_from_pyvista(cam, device)
+    R_cam, t_cam = camera_extrinsics_from_pyvista(cam)
     R_cam = R_cam.squeeze(0).cpu().numpy()
     t_cam = t_cam.squeeze(0).cpu().numpy()
 
