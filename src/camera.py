@@ -115,9 +115,9 @@ def compose_camera_object(cam, clip, H, W, strict=True):
     K = _kaolin_cam_to_K(cam)
 
     # --- Camera extrinsics from PyVista world -> Kaolin camera space ---
-    R_cam, t_cam = camera_extrinsics_from_pyvista(cam)
-    R_cam = R_cam.squeeze(0).numpy()
-    t_cam = t_cam.squeeze(0).numpy()
+    #R_cam, t_cam = camera_extrinsics_from_pyvista(cam)
+    #R_cam = R_cam.squeeze(0).numpy()
+    #t_cam = t_cam.squeeze(0).numpy()
 
     # --- Object pose from PyVista (world coordinates) ---
     R_obj, t_obj = _world_obj_to_obj2cam(clip)
