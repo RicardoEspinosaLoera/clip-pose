@@ -38,32 +38,35 @@ class SoftMeshRenderer(torch.nn.Module):
 
     def forward(self, R, t, K, image_size):
         """
-        Forward render pass to match PyVista ground truth rendering
-        PyVista convention:
-        - Camera position and focal_point define view direction
-        - view_up defines camera orientation 
+        Forward render pass to match dataset ground truth
+        Dataset convention (from PyVista):
         - World space: +X right, +Y up, +Z out of screen
-        - Object space: Same as world space
-    
-        Kaolin convention:
-        - World space: +X right, -Y up, +Z forward (into screen)
-        - Camera looks along +Z
+        - Camera convention from meta['camera'] and meta['clip']
         """
         B = R.shape[0]
         device = self.verts.device
         R, t, K = R.to(device).float(), t.to(device).float(), K.to(device).float()
-        
-        # PyVista → Kaolin coordinate transform
-        R_fix = torch.diag(torch.tensor([1.0, -1.0, -1.0], device=R.device, dtype=R.dtype))
-        R = R_fix[None, :, :] @ R 
-        t = (R_fix[None, :, :] @ t[..., None]).squeeze(-1)
-        
-        # Transform vertices to camera space
-        v_cam = torch.einsum('bij,vj->bvi', R, self.verts) + t[:, None, :]
-        
-        # Project to image space using provided camera intrinsics 
-        v_img = project_pixels(v_cam, K)                                     # (B,V,3) [u,v,z]
 
+        # Scale vertices to reasonable size (optional)
+        scale = 0.1  # Adjust this value if needed
+        scaled_verts = self.verts * scale
+
+        # Transform from world to camera space 
+        # Note: We don't need R_fix since dataset already handles coordinate conversion
+        v_cam = torch.einsum('bij,vj->bvi', R, scaled_verts) + t[:, None, :]
+        
+        # Ensure points are in front of camera
+        z_offset = torch.tensor([0., 0., 100.], device=device)[None, None, :]
+        v_cam = v_cam + z_offset
+
+        # Project to image space using dataset's camera intrinsics
+        v_img = project_pixels(v_cam, K)
+
+        # Debug prints
+        print(f"Camera matrix K:")
+        print(f"fx, fy, cx, cy = {K[0,0,0].item():.4f} {K[0,1,1].item():.4f} {K[0,0,2].item():.4f} {K[0,1,2].item():.4f}")
+        print(f"v_cam z range: {v_cam[...,2].min().item():.2f} to {v_cam[...,2].max().item():.2f}")
+        
         H, W = int(image_size[0]), int(image_size[1])
         u, v = v_img[..., 0], v_img[..., 1]
         print(
