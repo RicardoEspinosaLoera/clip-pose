@@ -64,7 +64,6 @@ class SoftMeshRenderer(torch.nn.Module):
         W , H  = image_size[1], image_size[0]
         fx, fy = K[0,0,0], K[0,1,1]
         cx, cy = K[0,0,2], K[0,1,2]
-        # Offset in pixels to center
         xy_offset = torch.tensor([(W/2 - cx)/fx, (H/2 - cy)/fy, 0.], device=device)[None, None, :]
         v_cam = v_cam + xy_offset * v_cam[..., 2:3]  # Scale offset by depth
 
@@ -146,3 +145,5 @@ class SoftMeshRenderer(torch.nn.Module):
             print("[WARN] Invalid z values (NaN/Inf) detected in renderer")
 
         print("mean z:", v_cam[...,2].mean().item())
+
+        return rgb, sil

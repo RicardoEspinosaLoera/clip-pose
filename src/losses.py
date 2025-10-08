@@ -457,5 +457,4 @@ def pose_loss2(
         overlay = F.interpolate(overlay, size=(H, W), mode='bilinear', align_corners=False).clamp(0,1)
 
 
-
     return loss, logs, I_comp, overlay, rgb_hat
