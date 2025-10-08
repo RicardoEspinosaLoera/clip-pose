@@ -41,25 +41,27 @@ class SoftMeshRenderer(torch.nn.Module):
         Forward render pass to match dataset ground truth
         Dataset convention (from PyVista):
         - World space: +X right, +Y up, +Z out of screen
-        - Camera convention from meta['camera'] and meta['clip']
         """
         B = R.shape[0]
         device = self.verts.device
         R, t, K = R.to(device).float(), t.to(device).float(), K.to(device).float()
 
-        # Scale vertices to reasonable size (optional)
-        scale = 0.1  # Adjust this value if needed
+        # Scale vertices to better fit image
+        scale = 0.15  # Increased from 0.1
         scaled_verts = self.verts * scale
 
-        # Transform from world to camera space 
-        # Note: We don't need R_fix since dataset already handles coordinate conversion
+        # Transform to camera space
         v_cam = torch.einsum('bij,vj->bvi', R, scaled_verts) + t[:, None, :]
         
-        # Ensure points are in front of camera
-        z_offset = torch.tensor([0., 0., 100.], device=device)[None, None, :]
+        # Adjust Z-offset to center in frame
+        z_offset = torch.tensor([0., 0., 180.], device=device)[None, None, :]  # Increased from 100
         v_cam = v_cam + z_offset
 
-        # Project to image space using dataset's camera intrinsics
+        # Center object in image plane
+        xy_offset = torch.tensor([(W/2 - cx)/fx, (H/2 - cy)/fy, 0.], device=device)[None, None, :]
+        v_cam = v_cam + xy_offset * v_cam[..., 2:3]  # Scale offset by depth
+
+        # Project to image space
         v_img = project_pixels(v_cam, K)
 
         # Debug prints
