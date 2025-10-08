@@ -88,7 +88,7 @@ class SoftMeshRenderer(torch.nn.Module):
         #scaled_verts = self.verts * scale
 
         # Transform to camera space
-        v_cam = torch.einsum('bij,vj->bvi', R, scaled_verts) + t[:, None, :]
+        v_cam = torch.einsum('bij,vj->bvi', R, self.verts) + t[:, None, :]
         #v_cam[..., 2] *= -1  # look along -Z
         
         # Adjust Z-offset to center in frame
