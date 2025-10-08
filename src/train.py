@@ -340,17 +340,27 @@ def main(cfg_path='config.yaml'):
     #SCALE = cfg.get('mesh', {}).get('scale', 2.0)
     verts, faces = load_mesh('./meshes/Item.obj')
     faces = faces.long()
+
     R_mesh_to_kaolin = torch.tensor([
         [0,  0,  1],
         [1,  0,  0],
         [0,  1,  0]
     ], dtype=torch.float32)
 
-    verts = verts @ R_mesh_to_kaolin.T
+    # --- extra 90° around Z to correct roll ---
+    theta = math.radians(90)   # try +90 first; if mirrored, change to -90
+    R_z90 = torch.tensor([
+        [math.cos(theta), -math.sin(theta), 0.0],
+        [math.sin(theta),  math.cos(theta), 0.0],
+        [0.0,              0.0,             1.0]
+    ], dtype=torch.float32)
+
+    R_total = R_mesh_to_kaolin @ R_z90
+
+    verts = verts @ R_total.T
     center = verts.mean(0)
     verts -= center
     verts, faces = verts.to(device), faces.to(device)
-    renderer = SoftMeshRenderer(verts, faces).to(device)
 
     with torch.no_grad():
         samp = sample_mesh_points(verts, faces, n=4096).to(device)
