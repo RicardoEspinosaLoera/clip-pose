@@ -39,8 +39,9 @@ class SoftMeshRenderer(torch.nn.Module):
     def forward(self, R, t, K, image_size):
         """
         Forward render pass to match dataset ground truth.
-        Handles translations in meters (t ≈ 100-200m range)
-        Camera matrix: fx≈1492.82, fy≈1015.12, cx=399.5, cy=271.5
+        - Z range typically 40-200m
+        - Translations are in world coordinates
+        - Camera matrix: fx≈1492.82, fy≈1015.12, cx=399.5, cy=271.5
         """
         B = R.shape[0]
         device = self.verts.device
@@ -54,17 +55,21 @@ class SoftMeshRenderer(torch.nn.Module):
         H, W = int(image_size[0]), int(image_size[1])
         u, v = v_img[..., 0], v_img[..., 1]
 
-        # Only adjust if significant portion of vertices are outside frame
+        # Adjust pose only if object is significantly out of frame
         visible = ((u >= 0) & (u < W) & (v >= 0) & (v < H) & (v_cam[..., 2] > 0))
-        if visible.float().mean() < 0.3:  # Less than 30% visible
+        vis_percent = visible.float().mean()
+        
+        if vis_percent < 0.15:  # Less than 15% visible
+            # Calculate center offset in image space
             u_center = (u.max() + u.min()) / 2
             v_center = (v.max() + v.min()) / 2
             
-            # Scale adjustments based on depth
+            # Convert pixel offset to world space, scaled by depth
             mean_z = v_cam[..., 2].mean()
-            dx = (W/2 - u_center) / K[0,0,0] * (mean_z / 100.0)  # Scale with depth
-            dy = (H/2 - v_center) / K[0,1,1] * (mean_z / 100.0)
+            dx = (W/2 - u_center) / K[0,0,0] * mean_z
+            dy = (H/2 - v_center) / K[0,1,1] * mean_z
             
+            # Apply translation adjustment
             t_adj = torch.tensor([dx, dy, 0.], device=device)[None, :]
             t = t + t_adj
             
@@ -72,13 +77,12 @@ class SoftMeshRenderer(torch.nn.Module):
             v_cam = torch.einsum('bij,vj->bvi', R, self.verts) + t[:, None, :]
             v_img = project_pixels(v_cam, K)
 
-        # Debug info
-        visible = ((u >= 0) & (u < W) & (v >= 0) & (v < H) & (v_cam[..., 2] > 0))
+        # Debug info (reduce duplicate prints)
         print(f"Camera matrix K:")
         print(f"fx, fy, cx, cy = {K[0,0,0].item():.4f} {K[0,1,1].item():.4f} {K[0,0,2].item():.4f} {K[0,1,2].item():.4f}")
         print(f"Translation: {t[0]}")
         print(f"v_cam z range: {v_cam[...,2].min().item():.2f} to {v_cam[...,2].max().item():.2f}")
-        print(f"mean z: {v_cam[...,2].mean().item():.2f}")
+        print(f"Visible vertices: {visible.float().mean().item()*100:.2f}%")
 
         # Debug prints
         print(f"Camera matrix K:")
