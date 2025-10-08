@@ -38,39 +38,35 @@ class SoftMeshRenderer(torch.nn.Module):
 
     def forward(self, R, t, K, image_size):
         """
-        Forward render pass (Kaolin DIB-R backend)
-        Supports PyVista → Kaolin coordinate conversion:
-        - Kaolin convention: +Z forward, -Y up
-        - Visible faces have z > 0
-        - Pixel origin: top-left (optional flip_v)
+        Forward render pass to match PyVista ground truth rendering
+        PyVista camera convention:
+        - Camera position and focal_point define view direction
+        - view_up defines camera orientation
+        - Coordinate system: +X right, +Y up, +Z out of screen
         """
         B = R.shape[0]
         device = self.verts.device
         R, t, K = R.to(device).float(), t.to(device).float(), K.to(device).float()
-    
-        # Debug prints for input tensors
-        print("Input shapes:", 
-            "\nR:", R.shape, 
-            "\nt:", t.shape, 
-            "\nK:", K.shape,
-            "\nverts:", self.verts.shape)
+        
+        # Print camera intrinsics for verification with JSON
+        print(f"fx, fy, cx, cy = {K[0,0,0].item()} {K[0,1,1].item()} {K[0,0,2].item()} {K[0,1,2].item()}")
+        print(f"image_size = {tuple(image_size)}")
 
-        # Modify the coordinate fix to point Z forward instead of backward
-        R_fix = torch.diag(torch.tensor([1.0, -1.0, 1.0], device=R.device, dtype=R.dtype))
+        # PyVista → Kaolin coordinate transform
+        # PyVista: +Z out, +Y up
+        # Kaolin: +Z forward (into screen), -Y up
+        R_fix = torch.diag(torch.tensor([1.0, -1.0, -1.0], device=R.device, dtype=R.dtype))
         R = R_fix[None, :, :] @ R
         t = (R_fix[None, :, :] @ t[..., None]).squeeze(-1)
         
-        # Add a translation offset to move objects in front of camera if needed
-        z_offset = 100.0  # Adjust this value as needed
-        t = t + torch.tensor([0., 0., z_offset], device=t.device)[None, :]
-    
-        # ----------------------------------------------------
-        # 2️⃣ Transform vertices: world → camera → image
-        # ----------------------------------------------------
-        v_cam = torch.einsum('bij,vj->bvi', R, self.verts) + t[:, None, :]   # (B,V,3)
-        print("Camera space stats:",
-          "\nv_cam shape:", v_cam.shape,
-          "\nv_cam z range:", v_cam[..., 2].min().item(), "to", v_cam[..., 2].max().item())
+        # Scale factor to match PyVista rendering size
+        scale = 1.0
+        self.verts = self.verts * scale
+        
+        # Transform vertices to camera space
+        v_cam = torch.einsum('bij,vj->bvi', R, self.verts) + t[:, None, :]
+        
+        # Project to image space using provided camera intrinsics
         v_img = project_pixels(v_cam, K)                                     # (B,V,3) [u,v,z]
 
         H, W = int(image_size[0]), int(image_size[1])
