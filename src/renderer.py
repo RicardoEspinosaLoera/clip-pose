@@ -58,14 +58,14 @@ class SoftMeshRenderer(torch.nn.Module):
 
         R = R @ R_fix
 
-        # --- Final step: rotate 180° around Z to match PyVista image orientation ---
-        R_roll180 = torch.tensor([
-            [-1.0,  0.0,  0.0],
-            [ 0.0, -1.0,  0.0],
-            [ 0.0,  0.0,  1.0]
+        # 2. Rotate -90° around Z (fix image-plane rotation)
+        R_roll_neg90 = torch.tensor([
+            [ 0.0,  1.0, 0.0],
+            [-1.0,  0.0, 0.0],
+            [ 0.0,  0.0, 1.0]
         ], device=R.device, dtype=R.dtype)
 
-        R = R @ R_roll180
+        R = R @ R_roll_neg90
 
 
         # Scale vertices to better fit image
