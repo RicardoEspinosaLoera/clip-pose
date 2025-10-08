@@ -81,15 +81,15 @@ class SoftMeshRenderer(torch.nn.Module):
         n = torch.nn.functional.normalize(n, dim=-1)
         normals_z = n[..., 2].abs().unsqueeze(-1).expand(-1, -1, 3)
 
-        # 7️⃣ Rasterization
-        rgb_out, sil_out = dibr(
-            height=H, width=W,
+       out = dibr(
+            height=H,
+            width=W,
             face_vertices_z=face_vertices_z,
-            face_vertices_image=face_vertices_image,
+            face_vertices_image=face_vertices_xy,
             face_features=ffeat,
             face_normals_z=normals_z
         )
-
-        rgb = rgb_out.permute(0, 3, 1, 2).clamp(0, 1)
-        sil = sil_out.unsqueeze(1).clamp(0, 1)
+        rgb = out[0].permute(0, 3, 1, 2).clamp(0, 1)  # (B,3,H,W)
+        sil = out[1].unsqueeze(1).clamp(0, 1)         # (B,1,H,W)
+        
         return rgb, sil
