@@ -48,7 +48,7 @@ class SoftMeshRenderer(torch.nn.Module):
 
         R_fix = torch.tensor([
             [-1.0,  0.0,  0.0],
-            [0.0,  -1.0,  0.0],
+            [0.0,  1.0,  0.0],
             [0.0,  0.0, -1.0]
             ], device=device, dtype=R.dtype)
 
@@ -83,6 +83,7 @@ class SoftMeshRenderer(torch.nn.Module):
         # Debug info
         visible = ((u >= 0) & (u < W) & (v >= 0) & (v < H) & (v_cam[..., 2] > 0))
         print(f"Translation: {t[0]}")
+        print(f"Rotation: {R[0]}")
         print(f"Z range: {v_cam[...,2].min().item():.2f} to {v_cam[...,2].max().item():.2f}")
         print(f"Visible: {visible.float().mean().item()*100:.2f}%")
 
@@ -97,8 +98,8 @@ class SoftMeshRenderer(torch.nn.Module):
         # 5️⃣ Depth, screen coords, and NDC
         # ----------------------------------------------------
         face_vertices_z = fvcam[..., 2]  # (B,F,3)
-        if getattr(self, "negate_z", False):
-            face_vertices_z = -face_vertices_z
+        #if getattr(self, "negate_z", False):
+        #    face_vertices_z = -face_vertices_z
 
         u_pix, v_pix = fvimg[..., 0], fvimg[..., 1]
         u_ndc = (u_pix + 0.5) / W * 2.0 - 1.0
