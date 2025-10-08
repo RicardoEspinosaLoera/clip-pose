@@ -47,18 +47,28 @@ class SoftMeshRenderer(torch.nn.Module):
         B = R.shape[0]
         device = self.verts.device
         R, t, K = R.to(device).float(), t.to(device).float(), K.to(device).float()
-        R_fix = torch.diag(torch.tensor([1.0, -1.0, -1.0], device=R.device, dtype=R.dtype))
-        R = R_fix[None, :, :] @ R  # Add batch dimension to R_fix
-        t = (R_fix[None, :, :] @ t[..., None]).squeeze(-1)  # Handle batch dimension properly
+    
+        # Debug prints for input tensors
+        print("Input shapes:", 
+            "\nR:", R.shape, 
+            "\nt:", t.shape, 
+            "\nK:", K.shape,
+            "\nverts:", self.verts.shape)
 
+        R_fix = torch.diag(torch.tensor([1.0, -1.0, -1.0], device=R.device, dtype=R.dtype))
+        R = R_fix[None, :, :] @ R
+        t = (R_fix[None, :, :] @ t[..., None]).squeeze(-1)
+        
+    
         # ----------------------------------------------------
         # 2️⃣ Transform vertices: world → camera → image
         # ----------------------------------------------------
-        v_cam = torch.einsum('bij,vj->bvi', R, self.verts) + t[:, None, :]   # (B,V,3)
-        v_img = project_pixels(v_cam, K)                                     # (B,V,3) [u,v,z]
-
+        v_cam = torch.einsum('bij,vj->bvi', R, self.verts) + t[:, None, :]   # (B,V,3)                                  # (B,V,3) [u,v,z]
+        print("Camera space stats:",
+          "\nv_cam shape:", v_cam.shape,
+          "\nv_cam z range:", v_cam[..., 2].min().item(), "to", v_cam[..., 2].max().item())
         H, W = int(image_size[0]), int(image_size[1])
-        u, v = v_img[..., 0], v_img[..., 1]
+        u, v = v_cam[..., 0], v_cam[..., 1]
         print(
             "u range:", u.min().item(), u.max().item(),
             "v range:", v.min().item(), v.max().item()
