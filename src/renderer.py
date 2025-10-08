@@ -38,23 +38,16 @@ class SoftMeshRenderer(torch.nn.Module):
 
     def forward(self, R, t, K, image_size):
         """
-        Forward render pass to match dataset ground truth
-        Dataset convention from JSON:
-        - Camera intrinsics: fx≈1492.82, fy≈1015.12, cx=399.5, cy=271.5
-        - Quaternion_wxyz and translation_m in pose_se3
-        - Translations are in meters, typically z≈90-150m
+        Forward render pass to match dataset ground truth.
+        Handles translations in meters (t ≈ 100-200m range)
         """
         B = R.shape[0]
         device = self.verts.device
         R, t, K = R.to(device).float(), t.to(device).float(), K.to(device).float()
 
-        # Scale factor to convert from meters to rendering units
-        # Your translations are in meters, need to scale to match vertex scale
-        scale = 1.0 / 100.0  # 1m = 100 rendering units
-        t_scaled = t * scale
-
-        # Transform vertices to camera space using GT poses
-        v_cam = torch.einsum('bij,vj->bvi', R, self.verts) + t_scaled[:, None, :]
+        # Don't scale translations - they're already in the right units
+        # The mesh vertices are in the same coordinate system as the translations
+        v_cam = torch.einsum('bij,vj->bvi', R, self.verts) + t[:, None, :]
         
         # Project to image space using provided intrinsics
         v_img = project_pixels(v_cam, K)
@@ -63,10 +56,12 @@ class SoftMeshRenderer(torch.nn.Module):
         u, v = v_img[..., 0], v_img[..., 1]
 
         # Debug info
+        visible = ((u >= 0) & (u < W) & (v >= 0) & (v < H) & (v_cam[..., 2] > 0))
         print(f"Camera matrix K:")
         print(f"fx, fy, cx, cy = {K[0,0,0].item():.4f} {K[0,1,1].item():.4f} {K[0,0,2].item():.4f} {K[0,1,2].item():.4f}")
-        print(f"Translation range: {t[0]} (before scaling)")
+        print(f"Translation: {t[0]}")
         print(f"v_cam z range: {v_cam[...,2].min().item():.2f} to {v_cam[...,2].max().item():.2f}")
+        print(f"Visible vertices: {visible.float().mean().item()*100:.2f}%")
 
         # Debug prints
         print(f"Camera matrix K:")
