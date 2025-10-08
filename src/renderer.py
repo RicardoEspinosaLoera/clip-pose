@@ -81,7 +81,7 @@ class SoftMeshRenderer(torch.nn.Module):
         n = torch.nn.functional.normalize(n, dim=-1)
         normals_z = n[..., 2].abs().unsqueeze(-1).expand(-1, -1, 3)
 
-       out = dibr(
+        out = dibr(
             height=H,
             width=W,
             face_vertices_z=face_vertices_z,
@@ -91,5 +91,5 @@ class SoftMeshRenderer(torch.nn.Module):
         )
         rgb = out[0].permute(0, 3, 1, 2).clamp(0, 1)  # (B,3,H,W)
         sil = out[1].unsqueeze(1).clamp(0, 1)         # (B,1,H,W)
-        
+
         return rgb, sil
