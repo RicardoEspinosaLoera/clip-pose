@@ -41,25 +41,26 @@ class SoftMeshRenderer(torch.nn.Module):
         Forward render pass to match dataset ground truth
         Dataset convention (from PyVista):
         - World space: +X right, +Y up, +Z out of screen
+        - Camera convention from meta['camera'] and meta['clip']
         """
         B = R.shape[0]
         device = self.verts.device
         R, t, K = R.to(device).float(), t.to(device).float(), K.to(device).float()
 
+
+        # Transform from world to camera space 
+        # Note: We don't need R_fix since dataset already handles coordinate conversion
         # Transform to camera space
         v_cam = torch.einsum('bij,vj->bvi', R, self.verts) + t[:, None, :]
-        
+
+        # Ensure points are in front of camera
+        z_offset = torch.tensor([0., 0., 100.], device=device)[None, None, :]
         # Adjust Z-offset to center in frame
         z_offset = torch.tensor([0., 0., 180.], device=device)[None, None, :]  # Increased from 100
         v_cam = v_cam + z_offset
 
+        # Project to image space using dataset's camera intrinsics
         # Center object in image plane
-        W, H = image_size[1], image_size[0]
-        cx = K[0, 0, 2].item()
-        cy = K[0, 1, 2].item()
-        fx = K[0, 0, 0].item()
-        fy = K[0, 1, 1].item()
-        
         xy_offset = torch.tensor([(W/2 - cx)/fx, (H/2 - cy)/fy, 0.], device=device)[None, None, :]
         v_cam = v_cam + xy_offset * v_cam[..., 2:3]  # Scale offset by depth
 
@@ -67,25 +68,23 @@ class SoftMeshRenderer(torch.nn.Module):
         v_img = project_pixels(v_cam, K)
 
         # Debug prints
-        """
         print(f"Camera matrix K:")
         print(f"fx, fy, cx, cy = {K[0,0,0].item():.4f} {K[0,1,1].item():.4f} {K[0,0,2].item():.4f} {K[0,1,2].item():.4f}")
         print(f"v_cam z range: {v_cam[...,2].min().item():.2f} to {v_cam[...,2].max().item():.2f}")
-        """
+
         H, W = int(image_size[0]), int(image_size[1])
         u, v = v_img[..., 0], v_img[..., 1]
-        """
         print(
             "u range:", u.min().item(), u.max().item(),
             "v range:", v.min().item(), v.max().item()
-        )"""
+        )
 
         visible = ((u >= 0) & (u < W) & (v >= 0) & (v < H) & (v_cam[..., 2] > 0))
-        #print("visible vertices:", visible.float().mean().item() * 100, "%")
+        print("visible vertices:", visible.float().mean().item() * 100, "%")
 
         H, W = int(image_size[0]), int(image_size[1])
 
-        #print("verts range (min,max):", self.verts.min().item(), self.verts.max().item())
+        print("verts range (min,max):", self.verts.min().item(), self.verts.max().item())
         # ----------------------------------------------------
         # 3️⃣ Optional flip for top-left image origin
         # ----------------------------------------------------
@@ -139,9 +138,7 @@ class SoftMeshRenderer(torch.nn.Module):
         # ----------------------------------------------------
         # 8️⃣ Debug: check mean depth and validity
         # ----------------------------------------------------
-        """if not torch.isfinite(face_vertices_z).all():
-            print("[WARN] Invalid z values (NaN/Inf) detected in renderer")"""
+        if not torch.isfinite(face_vertices_z).all():
+            print("[WARN] Invalid z values (NaN/Inf) detected in renderer")
 
-        #print("mean z:", v_cam[...,2].mean().item())
-
-        return rgb, sil
+        print("mean z:", v_cam[...,2].mean().item())
