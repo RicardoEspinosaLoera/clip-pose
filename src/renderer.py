@@ -47,7 +47,9 @@ class SoftMeshRenderer(torch.nn.Module):
         R, t, K = R.to(device).float(), t.to(device).float(), K.to(device).float()
 
         # --- Orientation correction (VTK -> Kaolin) ---
-        R_fix = torch.diag(torch.tensor([1.0, -1.0, -1.0], device=R.device, dtype=R.dtype))
+        #R_fix = torch.diag(torch.tensor([1.0, -1.0, -1.0], device=R.device, dtype=R.dtype))
+        R_fix = torch.diag(torch.tensor([1.0, -1.0, 1.0],
+                                device=R.device, dtype=R.dtype))
         R = R_fix @ R
         t = (R_fix @ t.T).T
 
