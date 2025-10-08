@@ -152,7 +152,6 @@ def load_mesh(path, scale=1.0):
 
     m = trimesh.load(path, process=True)
     if isinstance(m, trimesh.Scene):
-        # merge all geometries into one watertight-ish mesh
         m = trimesh.util.concatenate([g for g in m.geometry.values()])
     if (m.faces is None) or (m.faces.shape[1] != 3):
         m = m.triangulate()
@@ -163,14 +162,24 @@ def load_mesh(path, scale=1.0):
     F = torch.tensor(m.faces.astype(np.int64), dtype=torch.long)
 
     # --- PyVista (+Z up, +Y forward) → Kaolin (+Y up, +Z forward) ---
-    R_py2kai = torch.tensor([
+    R_py2kai_x = torch.tensor([
         [1.0,  0.0,  0.0],
         [0.0,  0.0, -1.0],
         [0.0,  1.0,  0.0]
     ], dtype=torch.float32)
 
-    V = V @ R_py2kai.T          # rotate vertices
-    V -= V.mean(0, keepdim=True)  # recenter mesh pivot
+    # --- Extra +90° roll around Z to align view_up correctly ---
+    theta = math.radians(90)   # try 90; if mirrored, change to -90
+    R_roll_z = torch.tensor([
+        [math.cos(theta), -math.sin(theta), 0.0],
+        [math.sin(theta),  math.cos(theta), 0.0],
+        [0.0,              0.0,             1.0]
+    ], dtype=torch.float32)
+
+    R_py2kai = R_roll_z @ R_py2kai_x
+
+    V = V @ R_py2kai.T
+    V -= V.mean(0, keepdim=True)  # recenter mesh
 
     return V, F
 
