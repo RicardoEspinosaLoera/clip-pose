@@ -67,6 +67,14 @@ class SoftMeshRenderer(torch.nn.Module):
 
         R = R @ R_roll_neg90
 
+        # --- roll +90° around Z ---
+        R_roll_pos90 = torch.tensor([
+            [ 0.0, -1.0, 0.0],
+            [ 1.0,  0.0, 0.0],
+            [ 0.0,  0.0, 1.0]
+        ], device=R.device, dtype=R.dtype)
+
+        R = R @ R_roll_pos90
 
         # Scale vertices to better fit image
         #scale = 0.15  # Increased from 0.1
