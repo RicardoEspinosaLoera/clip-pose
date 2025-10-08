@@ -1,7 +1,6 @@
 import torch
 from kaolin.render.mesh import dibr_rasterization as dibr
 from kaolin.ops.mesh import index_vertices_by_faces
-import numpy as np
 
 DEBUG_ONCE = {"done": False}
 
@@ -82,16 +81,16 @@ class SoftMeshRenderer(torch.nn.Module):
 
         #R = R_fix @ R        # rotate into Kaolin frame
         #t = t  # transform translation accordingly
-        
+        #R, t = camera_extrinsics_from_pyvista(v_cam,device)
 
         # Scale vertices to better fit image
-        scale = 0.15  # Increased from 0.1
-        scaled_verts = self.verts * scale
+        #scale = 0.15  # Increased from 0.1
+        #scaled_verts = self.verts * scale
 
         # Transform to camera space
         v_cam = torch.einsum('bij,vj->bvi', R, scaled_verts) + t[:, None, :]
         #v_cam[..., 2] *= -1  # look along -Z
-        R, t = camera_extrinsics_from_pyvista(v_cam,device)
+        
         # Adjust Z-offset to center in frame
         #z_offset = torch.tensor([0., 0., 180.], device=device)[None, None, :]  # Increased from 100
         #v_cam = v_cam + z_offset

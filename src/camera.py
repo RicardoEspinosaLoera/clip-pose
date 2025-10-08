@@ -24,7 +24,7 @@ def _rescale_K(K, Hsrc, Wsrc, Hdst, Wdst):
     K2[0, 0] *= sx; K2[0, 2] *= sx
     K2[1, 1] *= sy; K2[1, 2] *= sy
     return K2
-    
+
 def _kaolin_cam_to_K(cam):
     """Reads Kaolin-style intrinsics."""
     fx, fy, cx, cy = float(cam["fx"]), float(cam["fy"]), float(cam["cx"]), float(cam["cy"])
@@ -32,6 +32,55 @@ def _kaolin_cam_to_K(cam):
                   [0.,  fy, cy],
                   [0.,  0.,  1.]], dtype=np.float32)
     return K
+
+def camera_extrinsics_from_pyvista(cam, device):
+    """
+    Converts a PyVista-style camera definition to Kaolin-compatible extrinsics.
+
+    Args:
+        cam (dict): Must contain keys:
+            - "position": [x, y, z]
+            - "focal_point": [x, y, z]
+            - "view_up": [x, y, z]
+        device: torch device
+
+    Returns:
+        R (torch.Tensor): (1,3,3) world-to-camera rotation matrix
+        t (torch.Tensor): (1,3) world-to-camera translation vector
+    """
+    import numpy as np
+    import torch
+
+    # Extract fields
+    pos = np.array(cam["position"], dtype=np.float32)
+    focal = np.array(cam["focal_point"], dtype=np.float32)
+    up = np.array(cam["view_up"], dtype=np.float32)
+
+    # PyVista camera convention:
+    # forward = (focal - position) -> looks along -Z
+    forward = focal - pos
+    forward /= np.linalg.norm(forward)
+
+    right = np.cross(forward, up)
+    right /= np.linalg.norm(right)
+    up = np.cross(right, forward)
+
+    # Camera-to-world (VTK)
+    R_c2w = np.stack([right, up, -forward], axis=1)  # (3,3)
+
+    # World-to-camera (Kaolin)
+    R_w2c = R_c2w.T
+    t_w2c = -R_w2c @ pos
+
+    # Convert to Kaolin (+Z forward)
+    R_fix = np.diag([1, 1, -1])  # flip Z axis
+    R_final = R_fix @ R_w2c
+    t_final = R_fix @ t_w2c
+
+    R = torch.from_numpy(R_final).to(device).float().unsqueeze(0)
+    t = torch.from_numpy(t_final).to(device).float().unsqueeze(0)
+
+    return R, t
 
 def _world_obj_to_obj2cam(clip):
     """

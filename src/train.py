@@ -127,21 +127,7 @@ def overlay_mask_on_image(
     out = img * (1.0 - a) + color_t * a
     return out
 
-@torch.no_grad()
-def push_mesh_in_front(renderer, R, t, z_target: float = 1.0):
-    """
-    Ensures all vertices satisfy z >= z_target in camera coords
-    by shifting along +Z in camera space.
-    """
-    device = renderer.verts.device
-    # Current camera-space verts with the provided R,t
-    v_cam = torch.einsum('bij,vj->bvi', R.to(device), renderer.verts) + t[:, None, :].to(device)
-    zmin  = v_cam[..., 2].amin(dim=1)                # (B,)
-    # If anything is behind (zmin < z_target), shift forward along +Z
-    dz    = (-zmin + z_target).clamp_min(0.0)        # (B,)
-    t_fix = t.clone().to(device)
-    t_fix[:, 2] += dz
-    return t_fix
+
 
 def make_train_transform():
     return T.Compose([
@@ -233,6 +219,7 @@ def run_epoch(model, renderer, loader, device, cfg, P_obj, D_obj, verts, mode,
         BG = batch['bg'].to(device)
         K  = batch['K'].to(device)
         M  = batch['mask'].to(device)
+        cam  = batch['cam'].to(device)
 
         B = I.size(0)
         D_batch = torch.as_tensor(D_obj, device=device, dtype=I.dtype).expand(B)  # (B,)
@@ -265,7 +252,7 @@ def run_epoch(model, renderer, loader, device, cfg, P_obj, D_obj, verts, mode,
 
         """
         
-        loss, logs, I_comp, overlay, rgb = pose_loss2(R_pred, t_pred, R_gt, t_gt, D_batch, M, K, (H, W), renderer,BG, λR=0.5, λt=0.5, λmask=1.0, λbce=1.0, λdice=0.5, λedge=0.1, mask_downsample=2)
+        loss, logs, I_comp, overlay, rgb = pose_loss2(R_pred, t_pred, R_gt, t_gt, D_batch, M, K, (H, W), renderer,BG,cam, λR=0.5, λt=0.5, λmask=1.0, λbce=1.0, λdice=0.5, λedge=0.1, mask_downsample=2)
         
         if is_train:
             optimizer.zero_grad(set_to_none=True)
