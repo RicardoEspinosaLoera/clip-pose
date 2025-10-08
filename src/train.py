@@ -337,17 +337,9 @@ def main(cfg_path='config.yaml'):
                     num_workers=4, pin_memory=True)
 
     # ---- mesh & renderer ----
-    SCALE = cfg.get('mesh', {}).get('scale', 2.0)
-    verts, faces = load_mesh('./meshes/Item.obj', scale=SCALE)
+    #SCALE = cfg.get('mesh', {}).get('scale', 2.0)
+    verts, faces = load_mesh('./meshes/Item.obj')
     faces = faces.long()
-    R_py2kai = torch.tensor([
-        [1, 0, 0],
-        [0, 0, 1],
-        [0, -1, 0]
-    ], dtype=torch.float32)  # rotates Z-up -> Y-up
-    
-
-    verts = (verts @ R_py2kai.T)
     verts, faces = verts.to(device), faces.to(device)
     center = verts.mean(0)
     verts -= center
