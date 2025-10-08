@@ -48,8 +48,8 @@ class SoftMeshRenderer(torch.nn.Module):
         device = self.verts.device
         R, t, K = R.to(device).float(), t.to(device).float(), K.to(device).float()
         R_fix = torch.diag(torch.tensor([1.0, -1.0, -1.0], device=R.device, dtype=R.dtype))
-        R = R_fix @ R
-        t = R_fix @ t
+        R = R_fix[None, :, :] @ R  # Add batch dimension to R_fix
+        t = (R_fix[None, :, :] @ t[..., None]).squeeze(-1)  # Handle batch dimension properly
 
         # ----------------------------------------------------
         # 2️⃣ Transform vertices: world → camera → image
