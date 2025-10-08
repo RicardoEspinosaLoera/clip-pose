@@ -78,11 +78,6 @@ def camera_extrinsics_from_pyvista(cam):
     R = torch.from_numpy(R_final).float().unsqueeze(0)
     t = torch.from_numpy(t_final).float().unsqueeze(0)
 
-    print("Camera position:", pos)
-    print("Camera forward (focal - position):", focal - pos)
-    print("Object world translation:", t_obj)
-    print("Object camera translation (t_co):", t_co)
-
     return R, t
 
 def _world_obj_to_obj2cam(clip):
