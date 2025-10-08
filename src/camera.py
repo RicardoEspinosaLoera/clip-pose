@@ -122,6 +122,7 @@ def compose_camera_object(cam, clip, H, W, strict=True):
     # --- Object pose from PyVista (world coordinates) ---
     R_obj, t_obj = _world_obj_to_obj2cam(clip)
 
+    """
     # --- Convert object world pose into camera coordinates ---
     R_co = R_cam @ R_obj
     t_co = R_cam @ t_obj + t_cam
@@ -133,9 +134,9 @@ def compose_camera_object(cam, clip, H, W, strict=True):
 
     # --- Sanity check ---
     if strict and not (t_co[2] > 0.0):
-        print(f"[WARN] compose_camera_object: tz={t_co[2]:.3f} still <=0 after flip")
+        print(f"[WARN] compose_camera_object: tz={t_co[2]:.3f} still <=0 after flip")"""
 
-    return K.astype(np.float32), R_co.astype(np.float32), t_co.astype(np.float32)
+    return K.astype(np.float32), R_obj.astype(np.float32), t_obj.astype(np.float32)
 
 
 
