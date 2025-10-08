@@ -40,20 +40,38 @@ class SoftMeshRenderer(torch.nn.Module):
         """
         Forward render pass to match dataset ground truth.
         Handles translations in meters (t ≈ 100-200m range)
+        Camera matrix: fx≈1492.82, fy≈1015.12, cx=399.5, cy=271.5
         """
         B = R.shape[0]
         device = self.verts.device
         R, t, K = R.to(device).float(), t.to(device).float(), K.to(device).float()
 
-        # Don't scale translations - they're already in the right units
-        # The mesh vertices are in the same coordinate system as the translations
+        # Transform to camera space
         v_cam = torch.einsum('bij,vj->bvi', R, self.verts) + t[:, None, :]
         
+        # Add small z-offset if vertices are too close to camera
+        min_z = v_cam[..., 2].min()
+        if min_z < 50.0:  # Ensure minimum distance from camera
+            z_offset = torch.tensor([0., 0., 50.0 - min_z], device=device)[None, None, :]
+            v_cam = v_cam + z_offset
+    
         # Project to image space using provided intrinsics
         v_img = project_pixels(v_cam, K)
 
         H, W = int(image_size[0]), int(image_size[1])
         u, v = v_img[..., 0], v_img[..., 1]
+
+        # Center adjustment if clip is outside frame
+        if u.min() < 0 or u.max() >= W or v.min() < 0 or v.max() >= H:
+            u_center = (u.max() + u.min()) / 2
+            v_center = (v.max() + v.min()) / 2
+            dx = (W/2 - u_center) / K[0,0,0]  # Convert pixels to meters using fx
+            dy = (H/2 - v_center) / K[0,1,1]  # Convert pixels to meters using fy
+            t = t + torch.tensor([dx, dy, 0.], device=device)[None, :]
+            # Recompute with adjusted translation
+            v_cam = torch.einsum('bij,vj->bvi', R, self.verts) + t[:, None, :]
+            v_img = project_pixels(v_cam, K)
+            u, v = v_img[..., 0], v_img[..., 1]
 
         # Debug info
         visible = ((u >= 0) & (u < W) & (v >= 0) & (v < H) & (v_cam[..., 2] > 0))
