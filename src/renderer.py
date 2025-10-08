@@ -22,6 +22,33 @@ def project_pixels(verts_cam, K):
     return torch.cat([u, v, Z], dim=-1)  # (B,V,3) [u,v,z]
 
 
+def camera_extrinsics_from_pyvista(cam, device):
+    pos = np.array(cam["position"], dtype=np.float32)
+    focal = np.array(cam["focal_point"], dtype=np.float32)
+    up = np.array(cam["view_up"], dtype=np.float32)
+
+    # PyVista: looks along (focal - pos)
+    forward = focal - pos
+    forward /= np.linalg.norm(forward)
+    right = np.cross(forward, up)
+    right /= np.linalg.norm(right)
+    up = np.cross(right, forward)
+
+    # Camera-to-world (VTK)
+    R_c2w = np.stack([right, up, -forward], axis=1)
+
+    # World-to-camera
+    R_w2c = R_c2w.T
+    t_w2c = -R_w2c @ pos
+
+    # Convert to Kaolin (+Z forward)
+    R_fix = np.diag([1, 1, -1])
+    R = torch.from_numpy(R_fix @ R_w2c).to(device).float().unsqueeze(0)
+    t = torch.from_numpy(R_fix @ t_w2c).to(device).float().unsqueeze(0)
+    return R, t
+
+
+
 class SoftMeshRenderer(torch.nn.Module):
     def __init__(self, verts, faces, per_vertex_rgb=None, negate_z=False, flip_v=False):
         super().__init__()
@@ -54,13 +81,7 @@ class SoftMeshRenderer(torch.nn.Module):
 
         #R = R_fix @ R        # rotate into Kaolin frame
         #t = t  # transform translation accordingly
-        R_obj_fix = torch.tensor([
-            [-1.0,  0.0,  0.0],
-            [ 0.0,  -1.0,  0.0],
-            [ 0.0,  0.0, 1.0]
-        ], device=device, dtype=torch.float32)
-
-        R = R @ R_obj_fix
+        R, t = camera_extrinsics_from_pyvista(v_cam,device)
 
         # Scale vertices to better fit image
         scale = 0.15  # Increased from 0.1
