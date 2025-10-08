@@ -78,6 +78,11 @@ def camera_extrinsics_from_pyvista(cam):
     R = torch.from_numpy(R_final).float().unsqueeze(0)
     t = torch.from_numpy(t_final).float().unsqueeze(0)
 
+    print("Camera position:", pos)
+    print("Camera forward (focal - position):", focal - pos)
+    print("Object world translation:", t_obj)
+    print("Object camera translation (t_co):", t_co)
+
     return R, t
 
 def _world_obj_to_obj2cam(clip):
@@ -125,6 +130,7 @@ def compose_camera_object(cam, clip, H, W, strict=True):
     # --- Convert object world pose into camera coordinates ---
     R_co = R_cam @ R_obj
     t_co = R_cam @ t_obj + t_cam
+    
 
     # --- Sanity check: ensure object is in front of camera ---
     if strict and not (t_co[2] > 0.0):
