@@ -55,10 +55,14 @@ class SoftMeshRenderer(torch.nn.Module):
             "\nK:", K.shape,
             "\nverts:", self.verts.shape)
 
-        R_fix = torch.diag(torch.tensor([1.0, -1.0, -1.0], device=R.device, dtype=R.dtype))
+        # Modify the coordinate fix to point Z forward instead of backward
+        R_fix = torch.diag(torch.tensor([1.0, -1.0, 1.0], device=R.device, dtype=R.dtype))
         R = R_fix[None, :, :] @ R
         t = (R_fix[None, :, :] @ t[..., None]).squeeze(-1)
         
+        # Add a translation offset to move objects in front of camera if needed
+        z_offset = 100.0  # Adjust this value as needed
+        t = t + torch.tensor([0., 0., z_offset], device=t.device)[None, :]
     
         # ----------------------------------------------------
         # 2️⃣ Transform vertices: world → camera → image
