@@ -48,44 +48,25 @@ class SoftMeshRenderer(torch.nn.Module):
         device = self.verts.device
         R, t, K = R.to(device).float(), t.to(device).float(), K.to(device).float()
 
-        # Transform vertices to camera space
+        # Transform to camera space
         v_cam = torch.einsum('bij,vj->bvi', R, self.verts) + t[:, None, :]
 
-        # Ensure z is positive (clip in front of camera)
-        z_min = v_cam[..., 2].min()
-        if z_min < 1.0:
-            z_offset = torch.tensor([0., 0., 1.0 - z_min], device=device)[None, None, :]
-            v_cam = v_cam + z_offset
+        # Avoid negative z-values with fixed offset
+        z_offset = torch.tensor([0., 0., 100.], device=device)[None, None, :]
+        v_cam = v_cam + z_offset
 
         # Project to image space using camera matrix
         v_img = project_pixels(v_cam, K)
         H, W = int(image_size[0]), int(image_size[1])
         u, v = v_img[..., 0], v_img[..., 1]
 
-        # Optional: Adjust camera space position to keep clip in frame
+        # Debug info
         visible = ((u >= 0) & (u < W) & (v >= 0) & (v < H) & (v_cam[..., 2] > 0))
-        vis_percent = visible.float().mean().item()
-        
-        if vis_percent < 0.2:  # Less than 20% visible
-            # Center in image by adjusting translation
-            mean_z = v_cam[..., 2].mean()
-            u_center = (u.max() + u.min()) / 2
-            v_center = (v.max() + v.min()) / 2
-            
-            # Scale translation adjustment by depth
-            dx = (W/2 - u_center) / K[0,0,0] * mean_z
-            dy = (H/2 - v_center) / K[0,1,1] * mean_z
-            
-            t = t + torch.tensor([dx, dy, 0.], device=device)[None, :]
-            
-            # Recompute with adjusted translation
-            v_cam = torch.einsum('bij,vj->bvi', R, self.verts) + t[:, None, :]
-            v_img = project_pixels(v_cam, K)
-            u, v = v_img[..., 0], v_img[..., 1]
-
-        # Flip v coordinates if needed
-        if self.flip_v:
-            v = (H - 1) - v
+        print(f"Translation: {t[0]}")
+        print(f"Z range: {v_cam[...,2].min().item():.2f} to {v_cam[...,2].max().item():.2f}")
+        print(f"UV range: ({u.min().item():.2f}, {u.max().item():.2f}), ({v.min().item():.2f}, {v.max().item():.2f})")
+        print(f"Visible: {visible.float().mean().item()*100:.2f}%")
+        print(f"mean z: {v_cam[...,2].mean().item()}")
 
         # Prepare face buffers
         faces = self.faces
