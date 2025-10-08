@@ -38,41 +38,30 @@ class SoftMeshRenderer(torch.nn.Module):
 
     def forward(self, R, t, K, image_size):
         """
-        Forward render pass to exactly match PyVista GT poses.
-        PyVista GT:
-        - Translations are in meters, typically z≈50-150m
-        - Camera looks along -Z (PyVista) but Kaolin looks along +Z
-        - Image size: 800x544 (W x H)
-        - Camera params: fx≈1492.82, fy≈1015.12, cx=399.5, cy=271.5
+        Forward render pass using poses already in Kaolin coordinates.
+        Input format from JSON:
+        - R: clip.pose_se3.rotation (3x3 matrix)
+        - t: clip.pose_se3.translation_m (in meters)
+        - K: [fx≈1492.82, fy≈1015.12, cx=399.5, cy=271.5]
         """
         B = R.shape[0]
         device = self.verts.device
         R, t, K = R.to(device).float(), t.to(device).float(), K.to(device).float()
 
-        # Convert from PyVista to Kaolin coordinates
-        R_fix = torch.diag(torch.tensor([1., -1., -1.], device=device))
-        R = R_fix[None, :, :] @ R  # Apply to rotation
-        t = (R_fix[None, :, :] @ t[..., None]).squeeze(-1)  # Apply to translation
-
-        # Transform vertices to camera space
+        # Direct transform to camera space - no coordinate conversion needed
         v_cam = torch.einsum('bij,vj->bvi', R, self.verts) + t[:, None, :]
 
-        # Project to image space
+        # Project to image space using provided K matrix
         v_img = project_pixels(v_cam, K)
         H, W = int(image_size[0]), int(image_size[1])
         u, v = v_img[..., 0], v_img[..., 1]
 
         # Debug info
         visible = ((u >= 0) & (u < W) & (v >= 0) & (v < H) & (v_cam[..., 2] > 0))
-        print(f"Translation (after fix): {t[0]}")
+        print(f"Translation: {t[0]}")
         print(f"Z range: {v_cam[...,2].min().item():.2f} to {v_cam[...,2].max().item():.2f}")
         print(f"UV range: ({u.min().item():.2f}, {u.max().item():.2f}), ({v.min().item():.2f}, {v.max().item():.2f})")
         print(f"Visible: {visible.float().mean().item()*100:.2f}%")
-
-        # Handle v-flip if needed (PyVista uses different origin)
-        if self.flip_v:
-            v = (H - 1) - v
-            v_img[..., 1] = v
 
         # Prepare face buffers
         faces = self.faces
