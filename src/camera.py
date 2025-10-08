@@ -115,7 +115,7 @@ def compose_camera_object(cam, clip, H, W, strict=True):
     K = _kaolin_cam_to_K(cam)
 
     # --- Camera extrinsics from PyVista world -> Kaolin camera space ---
-    R_cam, t_cam = camera_extrinsics_from_pyvista(cam, device="cpu")
+    R_cam, t_cam = camera_extrinsics_from_pyvista(cam)
     R_cam = R_cam.squeeze(0).numpy()
     t_cam = t_cam.squeeze(0).numpy()
 
