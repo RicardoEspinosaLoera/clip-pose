@@ -49,29 +49,28 @@ class SoftMeshRenderer(torch.nn.Module):
         # Transform to camera space
         v_cam = torch.einsum('bij,vj->bvi', R, self.verts) + t[:, None, :]
         
-        # Add small z-offset if vertices are too close to camera
-        min_z = v_cam[..., 2].min()
-        if min_z < 50.0:  # Ensure minimum distance from camera
-            z_offset = torch.tensor([0., 0., 50.0 - min_z], device=device)[None, None, :]
-            v_cam = v_cam + z_offset
-    
-        # Project to image space using provided intrinsics
+        # Project to image space
         v_img = project_pixels(v_cam, K)
-
         H, W = int(image_size[0]), int(image_size[1])
         u, v = v_img[..., 0], v_img[..., 1]
 
-        # Center adjustment if clip is outside frame
-        if u.min() < 0 or u.max() >= W or v.min() < 0 or v.max() >= H:
+        # Only adjust if significant portion of vertices are outside frame
+        visible = ((u >= 0) & (u < W) & (v >= 0) & (v < H) & (v_cam[..., 2] > 0))
+        if visible.float().mean() < 0.3:  # Less than 30% visible
             u_center = (u.max() + u.min()) / 2
             v_center = (v.max() + v.min()) / 2
-            dx = (W/2 - u_center) / K[0,0,0]  # Convert pixels to meters using fx
-            dy = (H/2 - v_center) / K[0,1,1]  # Convert pixels to meters using fy
-            t = t + torch.tensor([dx, dy, 0.], device=device)[None, :]
+            
+            # Scale adjustments based on depth
+            mean_z = v_cam[..., 2].mean()
+            dx = (W/2 - u_center) / K[0,0,0] * (mean_z / 100.0)  # Scale with depth
+            dy = (H/2 - v_center) / K[0,1,1] * (mean_z / 100.0)
+            
+            t_adj = torch.tensor([dx, dy, 0.], device=device)[None, :]
+            t = t + t_adj
+            
             # Recompute with adjusted translation
             v_cam = torch.einsum('bij,vj->bvi', R, self.verts) + t[:, None, :]
             v_img = project_pixels(v_cam, K)
-            u, v = v_img[..., 0], v_img[..., 1]
 
         # Debug info
         visible = ((u >= 0) & (u < W) & (v >= 0) & (v < H) & (v_cam[..., 2] > 0))
@@ -79,7 +78,7 @@ class SoftMeshRenderer(torch.nn.Module):
         print(f"fx, fy, cx, cy = {K[0,0,0].item():.4f} {K[0,1,1].item():.4f} {K[0,0,2].item():.4f} {K[0,1,2].item():.4f}")
         print(f"Translation: {t[0]}")
         print(f"v_cam z range: {v_cam[...,2].min().item():.2f} to {v_cam[...,2].max().item():.2f}")
-        print(f"Visible vertices: {visible.float().mean().item()*100:.2f}%")
+        print(f"mean z: {v_cam[...,2].mean().item():.2f}")
 
         # Debug prints
         print(f"Camera matrix K:")
