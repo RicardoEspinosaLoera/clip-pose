@@ -51,21 +51,12 @@ class SoftMeshRenderer(torch.nn.Module):
         #R_fix = torch.diag(torch.tensor([1.0, -1.0, 1.0], device=R.device, dtype=R.dtype))
        # --- Orientation correction (final tweak: roll around Z) ---
         R_fix = torch.tensor([
-            [-1.0,  0.0,  0.0],
-            [ 0.0,  1.0,  0.0],
-            [ 0.0,  0.0, -1.0]
+            [ 1.0,  0.0,  0.0],
+            [ 0.0, -1.0,  0.0],
+            [ 0.0,  0.0,  1.0]
         ], device=R.device, dtype=R.dtype)
 
         R = R @ R_fix
-
-        # --- Roll -90° around Z to match PyVista orientation ---
-        R_roll_neg90 = torch.tensor([
-            [ 0.0,  1.0, 0.0],
-            [-1.0,  0.0, 0.0],
-            [ 0.0,  0.0, 1.0]
-        ], device=R.device, dtype=R.dtype)
-
-        R = R @ R_roll_neg90
 
 
         # Scale vertices to better fit image
