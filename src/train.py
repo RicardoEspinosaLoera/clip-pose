@@ -219,7 +219,7 @@ def run_epoch(model, renderer, loader, device, cfg, P_obj, D_obj, verts, mode,
         BG = batch['bg'].to(device)
         K  = batch['K'].to(device)
         M  = batch['mask'].to(device)
-        cam  = batch['cam'].to(device)
+        cam  = batch['cam']
 
         B = I.size(0)
         D_batch = torch.as_tensor(D_obj, device=device, dtype=I.dtype).expand(B)  # (B,)

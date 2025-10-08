@@ -48,8 +48,6 @@ def camera_extrinsics_from_pyvista(cam, device):
         R (torch.Tensor): (1,3,3) world-to-camera rotation matrix
         t (torch.Tensor): (1,3) world-to-camera translation vector
     """
-    import numpy as np
-    import torch
 
     # Extract fields
     pos = np.array(cam["position"], dtype=np.float32)
