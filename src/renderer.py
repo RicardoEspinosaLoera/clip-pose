@@ -1,6 +1,7 @@
 import torch
 from kaolin.render.mesh import dibr_rasterization as dibr
 from kaolin.ops.mesh import index_vertices_by_faces
+import numpy as np
 
 DEBUG_ONCE = {"done": False}
 
