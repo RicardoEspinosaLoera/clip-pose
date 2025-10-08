@@ -63,12 +63,14 @@ class SoftMeshRenderer(torch.nn.Module):
         # ----------------------------------------------------
         # 2️⃣ Transform vertices: world → camera → image
         # ----------------------------------------------------
-        v_cam = torch.einsum('bij,vj->bvi', R, self.verts) + t[:, None, :]   # (B,V,3)                                  # (B,V,3) [u,v,z]
+        v_cam = torch.einsum('bij,vj->bvi', R, self.verts) + t[:, None, :]   # (B,V,3)
         print("Camera space stats:",
           "\nv_cam shape:", v_cam.shape,
           "\nv_cam z range:", v_cam[..., 2].min().item(), "to", v_cam[..., 2].max().item())
+        v_img = project_pixels(v_cam, K)                                     # (B,V,3) [u,v,z]
+
         H, W = int(image_size[0]), int(image_size[1])
-        u, v = v_cam[..., 0], v_cam[..., 1]
+        u, v = v_img[..., 0], v_img[..., 1]
         print(
             "u range:", u.min().item(), u.max().item(),
             "v range:", v.min().item(), v.max().item()
