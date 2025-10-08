@@ -342,9 +342,10 @@ def main(cfg_path='config.yaml'):
     faces = faces.long()
     R_py2kai = torch.tensor([
         [1, 0, 0],
-        [0, 0, 1],
-        [0, -1, 0]
+        [0, 0, -1],
+        [0, 1, 0]
     ], dtype=torch.float32)  # rotates Z-up -> Y-up
+    
 
     verts = (verts @ R_py2kai.T)
     verts, faces = verts.to(device), faces.to(device)
