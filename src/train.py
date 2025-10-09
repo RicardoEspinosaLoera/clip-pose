@@ -150,6 +150,7 @@ class AddGaussianNoise(torch.nn.Module):
 def load_mesh(path, scale=1.0):
     import trimesh, torch, numpy as np, math
 
+    # --- Load and clean mesh ---
     m = trimesh.load(path, process=True)
     if isinstance(m, trimesh.Scene):
         m = trimesh.util.concatenate([g for g in m.geometry.values()])
@@ -161,27 +162,20 @@ def load_mesh(path, scale=1.0):
     V = torch.tensor(m.vertices, dtype=torch.float32) * float(scale)
     F = torch.tensor(m.faces.astype(np.int64), dtype=torch.long)
 
-    # --- PyVista (+Z up, +Y forward) → Kaolin (+Y up, +Z forward) ---
-    R_py2kai_x = torch.tensor([
-        [1.0,  0.0,  0.0],
-        [0.0,  0.0, -1.0],
-        [0.0,  1.0,  0.0]
+    # --- PyVista (Z-up, shaft ≈ −X) → Kaolin (+Y up, +Z forward) ---
+    # rotation = +90° about Y
+    R_py2kai = torch.tensor([
+        [ 0.0,  0.0,  1.0],   # +X → +Z
+        [ 0.0,  1.0,  0.0],   # +Y → +Y
+        [-1.0,  0.0,  0.0]    # +Z → −X
     ], dtype=torch.float32)
 
-    # --- Extra +90° roll around Z to align view_up correctly ---
-    theta = math.radians(90)   # try 90; if mirrored, change to -90
-    R_roll_z = torch.tensor([
-        [math.cos(theta), -math.sin(theta), 0.0],
-        [math.sin(theta),  math.cos(theta), 0.0],
-        [0.0,              0.0,             1.0]
-    ], dtype=torch.float32)
-
-    R_py2kai = R_roll_z @ R_py2kai_x
-
+    # Apply conversion
     V = V @ R_py2kai.T
-    V -= V.mean(0, keepdim=True)  # recenter mesh
+    V -= V.mean(0, keepdim=True)   # recenter pivot
 
     return V, F
+
 
 
 def rot_angles_rad(R_pred, R_gt, eps=1e-6):
