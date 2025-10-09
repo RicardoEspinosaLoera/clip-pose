@@ -148,7 +148,6 @@ class AddGaussianNoise(torch.nn.Module):
 
 
 def load_mesh(path, scale=1.0):
-    import trimesh, torch, numpy as np
 
     m = trimesh.load(path, process=True)
     if isinstance(m, trimesh.Scene):
@@ -163,7 +162,15 @@ def load_mesh(path, scale=1.0):
 
     # --- Mirror across X to fix left-hand / right-hand mismatch ---
     V[:, 0] *= -1.0
-    # (If that inverts depth instead, try V[:,2]*=-1 instead.)
+    # --- rotate −90° around X to match generator’s MODEL_UP = +X ---
+    theta = math.radians(-90)
+    R_xm90 = torch.tensor([
+        [1., 0., 0.],
+        [0.,  math.cos(theta), -math.sin(theta)],
+        [0.,  math.sin(theta),  math.cos(theta)]
+    ], dtype=torch.float32)
+
+    V = V @ R_xm90.T
 
     # Re-center pivot
     V -= V.mean(0, keepdim=True)
