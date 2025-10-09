@@ -148,18 +148,8 @@ class AddGaussianNoise(torch.nn.Module):
 
 
 def load_mesh(path, scale=1.0):
-    """
-    Loads a mesh and converts from PyVista's coordinate convention (Z-up)
-    to Kaolin's (Y-up, Z-forward), with an additional flip so the clip
-    faces the same direction as in PyVista renders.
+    import trimesh, torch, numpy as np
 
-    Returns:
-        V : torch.FloatTensor (V,3)  vertices in Kaolin frame
-        F : torch.LongTensor  (F,3)  face indices
-    """
-    import trimesh, torch, numpy as np, math
-
-    # --- Load and clean mesh ---
     m = trimesh.load(path, process=True)
     if isinstance(m, trimesh.Scene):
         m = trimesh.util.concatenate([g for g in m.geometry.values()])
@@ -171,44 +161,15 @@ def load_mesh(path, scale=1.0):
     V = torch.tensor(m.vertices, dtype=torch.float32) * float(scale)
     F = torch.tensor(m.faces.astype(np.int64), dtype=torch.long)
 
-    # ===============================================================
-    #  Coordinate conversion:  PyVista (Z-up, shaft −X)
-    #                     →  Kaolin  (Y-up, Z-forward)
-    # ===============================================================
+    # --- Mirror across X to fix left-hand / right-hand mismatch ---
+    V[:, 0] *= -1.0
+    # (If that inverts depth instead, try V[:,2]*=-1 instead.)
 
-    # 1) rotate +180° about Y to send shaft −X → +X
-    theta_y = math.radians(180)
-    R_y180 = torch.tensor([
-        [ math.cos(theta_y), 0., math.sin(theta_y)],
-        [ 0.,                1., 0.],
-        [-math.sin(theta_y), 0., math.cos(theta_y)]
-    ], dtype=torch.float32)
-
-    # 2) rotate +90° about Y to map PyVista's up/forward to Kaolin
-    theta_y2 = math.radians(90)
-    R_y90 = torch.tensor([
-        [ math.cos(theta_y2), 0., math.sin(theta_y2)],
-        [ 0.,                 1., 0.],
-        [-math.sin(theta_y2), 0., math.cos(theta_y2)]
-    ], dtype=torch.float32)
-
-    # combine the two (270° total about Y = +90° equivalent, then flip Z)
-    R_total = R_y180 @ R_y90
-
-    # 3) flip forward direction (Z) to match PyVista viewing sense
-    R_flipZ = torch.tensor([
-        [-1., 0., 0.],
-        [ 0., 1., 0.],
-        [ 0., 0., -1.]
-    ], dtype=torch.float32)
-
-    R_total = R_flipZ @ R_total
-
-    # 4) apply to vertices and recenter pivot
-    V = V @ R_total.T
+    # Re-center pivot
     V -= V.mean(0, keepdim=True)
 
     return V, F
+
 
 
 
