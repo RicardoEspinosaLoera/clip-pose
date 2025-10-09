@@ -162,17 +162,26 @@ def load_mesh(path, scale=1.0):
     V = torch.tensor(m.vertices, dtype=torch.float32) * float(scale)
     F = torch.tensor(m.faces.astype(np.int64), dtype=torch.long)
 
-    # --- PyVista (Z-up, shaft ≈ −X) → Kaolin (+Y up, +Z forward) ---
-    # rotation = +90° about Y
+    # --- PyVista → Kaolin base rotation (+90° Y) ---
     R_py2kai = torch.tensor([
-        [ 0.0,  0.0,  1.0],   # +X → +Z
-        [ 0.0,  1.0,  0.0],   # +Y → +Y
-        [-1.0,  0.0,  0.0]    # +Z → −X
+        [ 0.0,  0.0,  1.0],
+        [ 0.0,  1.0,  0.0],
+        [-1.0,  0.0,  0.0]
     ], dtype=torch.float32)
 
-    # Apply conversion
-    V = V @ R_py2kai.T
-    V -= V.mean(0, keepdim=True)   # recenter pivot
+    # --- Extra 180° roll around Z (fix upside-down) ---
+    theta = math.radians(180)
+    R_roll180 = torch.tensor([
+        [ math.cos(theta), -math.sin(theta), 0.0],
+        [ math.sin(theta),  math.cos(theta), 0.0],
+        [ 0.0,              0.0,             1.0]
+    ], dtype=torch.float32)
+
+    # combine both
+    R_total = R_roll180 @ R_py2kai
+
+    V = V @ R_total.T
+    V -= V.mean(0, keepdim=True)
 
     return V, F
 
