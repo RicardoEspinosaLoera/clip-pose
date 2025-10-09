@@ -13,6 +13,7 @@ import torchvision.transforms as T
 import torchvision.transforms.functional as TF
 import torch.nn.functional as F
 import math
+import trimesh
 
 @torch.no_grad()
 def save_or_log_overlay(I, I_comp, sil, rgb, M, out_dir, tag, step, to_wandb=False):
