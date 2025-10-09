@@ -150,7 +150,6 @@ class AddGaussianNoise(torch.nn.Module):
 def load_mesh(path, scale=1.0):
     import trimesh, torch, numpy as np, math
 
-    # --- Load and clean mesh ---
     m = trimesh.load(path, process=True)
     if isinstance(m, trimesh.Scene):
         m = trimesh.util.concatenate([g for g in m.geometry.values()])
@@ -162,28 +161,28 @@ def load_mesh(path, scale=1.0):
     V = torch.tensor(m.vertices, dtype=torch.float32) * float(scale)
     F = torch.tensor(m.faces.astype(np.int64), dtype=torch.long)
 
-    # --- PyVista → Kaolin base rotation (+90° Y) ---
-    R_py2kai = torch.tensor([
-        [ 0.0,  0.0,  1.0],
-        [ 0.0,  1.0,  0.0],
-        [-1.0,  0.0,  0.0]
+    # --- PyVista (Z-up, shaft -X) → Kaolin (+Y up, +Z forward) ---
+    R_py2kai_y = torch.tensor([
+        [ 0.,  0.,  1.],
+        [ 0.,  1.,  0.],
+        [-1.,  0.,  0.]
     ], dtype=torch.float32)
 
-    # --- Extra 180° roll around Z (fix upside-down) ---
-    theta = math.radians(180)
-    R_roll180 = torch.tensor([
-        [ math.cos(theta), -math.sin(theta), 0.0],
-        [ math.sin(theta),  math.cos(theta), 0.0],
-        [ 0.0,              0.0,             1.0]
+    # --- Extra ±90° roll around Z to fix in-plane orientation ---
+    theta = math.radians(90)      # try 90; if mirrored, switch to -90
+    R_roll_z = torch.tensor([
+        [math.cos(theta), -math.sin(theta), 0.],
+        [math.sin(theta),  math.cos(theta), 0.],
+        [0.,               0.,              1.]
     ], dtype=torch.float32)
 
-    # combine both
-    R_total = R_roll180 @ R_py2kai
+    R_total = R_roll_z @ R_py2kai_y
 
     V = V @ R_total.T
-    V -= V.mean(0, keepdim=True)
+    V -= V.mean(0, keepdim=True)  # center pivot
 
     return V, F
+
 
 
 
