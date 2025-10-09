@@ -82,17 +82,13 @@ def camera_extrinsics_from_pyvista(cam):
 
 def _world_obj_to_obj2cam(clip):
     """
-    Reads object pose in camera coordinates directly from Kaolin JSON.
+    Reads object pose in camera coordinates directly from JSON.
     JSON structure:
       clip["pose_se3"]["rotation"]: 3x3
       clip["pose_se3"]["translation_m"]: [3]
     """
     pose = clip.get("pose_se3", {})
-    if "rotation" in pose:
-        R_co = np.array(pose["rotation"], dtype=np.float32)
-        t_co = np.array(pose["translation_m"], dtype=np.float32)
-        return R_co, t_co
-    elif "quaternion_wxyz" in pose:
+    if "quaternion_wxyz" in pose:
         q = np.array(pose["quaternion_wxyz"], dtype=np.float32)
         R_co = _quat_wxyz_to_R(q)
         t_co = np.array(pose["translation_m"], dtype=np.float32)

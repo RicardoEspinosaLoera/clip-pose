@@ -150,7 +150,6 @@ class AddGaussianNoise(torch.nn.Module):
 def load_mesh(path, scale=1.0):
     import trimesh, torch, numpy as np, math
 
-    # --- Load and clean mesh ---
     m = trimesh.load(path, process=True)
     if isinstance(m, trimesh.Scene):
         m = trimesh.util.concatenate([g for g in m.geometry.values()])
@@ -162,16 +161,26 @@ def load_mesh(path, scale=1.0):
     V = torch.tensor(m.vertices, dtype=torch.float32) * float(scale)
     F = torch.tensor(m.faces.astype(np.int64), dtype=torch.long)
 
+    # --- Fix mesh orientation (PyVista → Kaolin) ---
+    # 180° around X then +90° around Y
+    theta_x = math.radians(180)
+    theta_y = math.radians(90)
 
-    # --- PyVista → Kaolin base rotation (+90° Y) ---
-    R_py2kai = torch.tensor([
-        [ 0.0,  0.0,  1.0],
-        [ 0.0,  1.0,  0.0],
-        [-1.0,  0.0,  0.0]
+    R_x180 = torch.tensor([
+        [1.,  0.,            0.],
+        [0.,  math.cos(theta_x), -math.sin(theta_x)],
+        [0.,  math.sin(theta_x),  math.cos(theta_x)]
     ], dtype=torch.float32)
 
+    R_y90 = torch.tensor([
+        [ math.cos(theta_y), 0., math.sin(theta_y)],
+        [ 0.,                1., 0.],
+        [-math.sin(theta_y), 0., math.cos(theta_y)]
+    ], dtype=torch.float32)
 
-    V = V @ R_py2kai.T
+    R_total = R_y90 @ R_x180
+
+    V = V @ R_total.T
     V -= V.mean(0, keepdim=True)
 
     return V, F
