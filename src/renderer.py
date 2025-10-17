@@ -133,6 +133,8 @@ class SoftMeshRenderer(torch.nn.Module):
         device = self.verts.device
         R, t, K = R.to(device).float(), t.to(device).float(), K.to(device).float()
 
+        print(R.shape, t.shape, K.shape)
+
         # -------- 1) Clip world/object -> camera --------
         v_cam = torch.einsum('bij,vj->bvi', R, self.verts) + t[:, None, :]  # [B,V,3]
         
