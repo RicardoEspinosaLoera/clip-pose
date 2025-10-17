@@ -59,6 +59,8 @@ class TripletDataset(Dataset):
 
             K = kaolin_cam_to_K(cam)
 
+            print("##########", R_oc.shape, t_oc.shape, K.shape)
+
 
 
         except Exception as e:

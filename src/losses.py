@@ -3,7 +3,6 @@ import math
 import torch
 import torch.nn.functional as F
 
-_RAD2DEG = 57.29577951308232
 
 def _ensure_nchw(x):
     if x.ndim == 2:                    # H,W
@@ -201,7 +200,8 @@ def gt_pose_iou(M, R_gt, t_gt, K, renderer, image_size):
     if sil.shape[-2:] != (Hm, Wm):
         sil = F.interpolate(sil, size=(Hm,Wm), mode='bilinear', align_corners=False).clamp(0,1)
     return _iou_bin(sil, M)
-# ---------------------------------------------------------------------------
+
+# ---------- LOSS FUNCTIONS ----------
 def _dice_loss(p, g, eps=1e-6): 
     # p,g: (B,1,H,W) in [0,1] 
     inter = (p * g).sum(dim=(1,2,3)) 
@@ -276,48 +276,6 @@ def rot_geodesic_loss(R_pred, R_gt, eps=1e-7):
     theta = torch.acos(cos_theta)  # [B]
     return theta.mean()
 
-
-# ---------- rendering safety helpers ----------
-@torch.no_grad()
-def _sanitize_t(R, t, z_min=1e-2, z_max=None):
-    t = t.clone()
-    t[:, 2] = torch.nn.functional.softplus(t[:, 2]) + z_min  # force z>0
-    if z_max is not None:
-        t[:, 2] = torch.clamp(t[:, 2], max=z_max)
-    return R, t
-
-@torch.no_grad()
-def _apply_alignment(R, t, K, align):
-    """Apply cached alignment tweaks for rendering only."""
-    inv, flip, hpx = align['invert'], align['flip_v'], align['halfpx']
-    if inv:
-        Rr = R.transpose(1,2)
-        tr = -torch.einsum('bij,bj->bi', Rr, t)
-    else:
-        Rr, tr = R, t
-    K_r = K.clone()
-    K_r[:,0,2] += hpx; K_r[:,1,2] += hpx
-    return Rr, tr, K_r, flip
-
-@torch.no_grad()
-def _render_safe(renderer, R, t, K, image_size, flip_v=False):
-    """Never crash: return zeros if Kaolin fails."""
-    Hs, Ws = image_size
-    B = R.shape[0]
-    try:
-        rgb, sil = renderer(R, t, K, image_size=(Hs, Ws))
-    except Exception as e:
-        device = R.device
-        print(f"[render-safe] fallback: {type(e).__name__}: {e}")
-        rgb = torch.zeros(B, 3, Hs, Ws, device=device)
-        sil = torch.zeros(B, 1, Hs, Ws, device=device)
-        return rgb, sil
-    sil = sil if sil.ndim == 4 else sil.unsqueeze(1)
-    sil = sil.float().clamp(0,1)
-    if flip_v:
-        sil = torch.flip(sil, [2])
-    rgb = rgb.float().clamp(0,1)
-    return rgb, sil
 
 def normalized_t_loss(t_pred, t_gt, D_obj, eps=1e-7):
     # Ensure [B,3]
