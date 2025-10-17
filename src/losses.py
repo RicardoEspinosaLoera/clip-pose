@@ -320,10 +320,9 @@ def _render_safe(renderer, R, t, K, image_size, flip_v=False):
     return rgb, sil
 
 def normalized_t_loss(t_pred, t_gt, D_obj, eps=1e-8): 
+    print(t_pred.shape, t_gt.shape, D_obj.shape)
     return (torch.linalg.norm(t_pred - t_gt, dim=1) / (D_obj + eps)).mean()
 
-import torch
-import torch.nn.functional as F
 
 # --- helper 0: (optional) rescale intrinsics if you render at a different size ---
 def rescale_K(K, old_H, old_W, new_H, new_W):
