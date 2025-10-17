@@ -34,3 +34,10 @@ def kaolin_cam_to_K(cam):
                   [0.,  fy, cy],
                   [0.,  0.,  1.]], dtype=np.float32)
     return K
+	
+def sixd_to_rotmat(a):
+    a1, a2 = a[..., :3], a[..., 3:]
+    b1 = torch.nn.functional.normalize(a1, dim=-1)
+    b2 = torch.nn.functional.normalize(a2 - (b1*a2).sum(-1, keepdim=True)*b1, dim=-1)
+    b3 = torch.cross(b1, b2, dim=-1)
+    return torch.stack([b1, b2, b3], dim=-1)
