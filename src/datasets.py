@@ -46,12 +46,12 @@ class TripletDataset(Dataset):
             clip_se3 = meta['clip']['pose_se3']
 
             R_wc_np, t_wc_np = world_to_camera_from_vtk(cam["position"], cam["focal_point"], cam["view_up"])
-            R_wc = torch.from_numpy(R_wc_np).float().to(device)
-            t_wc = torch.from_numpy(t_wc_np).float().to(device)
+            R_wc = torch.from_numpy(R_wc_np).float()
+            t_wc = torch.from_numpy(t_wc_np).float()
 
             q = np.asarray(clip_world["quaternion_wxyz"], dtype=np.float32)
-            R_ow = torch.from_numpy(quat_wxyz_to_R(q)).float().to(device)       # [3,3]
-            t_ow = torch.tensor(clip_world["translation_m"], dtype=torch.float32, device=device)  # [3]
+            R_ow = torch.from_numpy(quat_wxyz_to_R(q)).float()       # [3,3]
+            t_ow = torch.tensor(clip_world["translation_m"], dtype=torch.float32)  # [3]
 
             # --- 3) Compose Object → Camera
             R_oc = torch.matmul(R_wc, R_ow.unsqueeze(0))                        # [1,3,3]
