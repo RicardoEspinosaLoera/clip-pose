@@ -171,10 +171,9 @@ class SoftMeshRenderer(torch.nn.Module):
         WMINUS1 = False        # True matches your earlier path; else False uses W/H
         Y_UP = True          # you said your DIB-R path is y-down
 
-        if affine_xy is not None:
-            sx, sy, tx, ty = affine_xy
-            u_pix = u_pix * sx + tx
-            v_pix = v_pix * sy + ty
+        sx, sy, tx, ty = (0.68, 1.0, 128.34, -0.5)
+        u_pix = u_pix * sx + tx
+        v_pix = v_pix * sy + ty
 
         # forward
         u_ndc, v_ndc = pixels_to_ndc(u_pix, v_pix, W, H,
