@@ -3,7 +3,7 @@ import json, os
 import imageio.v2 as imageio
 import torch
 from torch.utils.data import Dataset
-from .camera import kaolin_cam_to_K, world_to_camera_from_vtk
+from .camera import kaolin_cam_to_K, world_to_camera_from_vtk, quat_wxyz_to_R
 import numpy as np
 
 class TripletDataset(Dataset):
