@@ -83,10 +83,6 @@ def gather_by_faces(vertices_features, faces):
     faces: [F,3] long
     returns: [B,F,3,K]
     """
-    if isinstance(vertices_features, np.ndarray):
-        vertices_features = torch.from_numpy(vertices_features)
-    if isinstance(faces, np.ndarray):
-        faces = torch.from_numpy(faces)
     faces = faces.to(torch.long).contiguous()
     vf = vertices_features
     if vf.dim() == 2:
@@ -132,8 +128,6 @@ class SoftMeshRenderer(torch.nn.Module):
         H, W = image_size
         device = self.verts.device
         R, t, K = R.to(device).float(), t.to(device).float(), K.to(device).float()
-
-        print(R.shape, t.shape, K.shape)
 
         # -------- 1) Clip world/object -> camera --------
         v_cam = torch.einsum('bij,vj->bvi', R, self.verts) + t[:, None, :]  # [B,V,3]
