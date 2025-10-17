@@ -319,9 +319,23 @@ def _render_safe(renderer, R, t, K, image_size, flip_v=False):
     rgb = rgb.float().clamp(0,1)
     return rgb, sil
 
-def normalized_t_loss(t_pred, t_gt, D_obj, eps=1e-8): 
-    print(t_pred.shape, t_gt.shape, D_obj.shape)
-    return (torch.linalg.norm(t_pred - t_gt, dim=1) / (D_obj + eps)).mean()
+def normalized_t_loss(t_pred, t_gt, D_obj, eps=1e-7):
+    # Ensure [B,3]
+    t_pred = t_pred.reshape(t_pred.shape[0], 3)
+    t_gt   = t_gt.reshape(t_gt.shape[0], 3)   # fixes [B,1,3] -> [B,3]
+
+    diff = t_pred - t_gt                      # [B,3]
+    num  = torch.linalg.norm(diff, dim=1)     # [B]
+
+    # Make D broadcastable
+    if torch.is_tensor(D_obj):
+        D = D_obj.reshape(-1).to(device=num.device, dtype=num.dtype)
+        if D.numel() == 1:                    # scalar -> [B]
+            D = D.expand_as(num)
+    else:
+        D = torch.tensor(float(D_obj), device=num.device, dtype=num.dtype).expand_as(num)
+
+    return (num / (D + eps)).mean()
 
 
 # --- helper 0: (optional) rescale intrinsics if you render at a different size ---
