@@ -82,8 +82,8 @@ class TripletDataset(Dataset):
             'bg': BG_t,
             'mask': M_t,
             'K': torch.from_numpy(K).float(),
-            'R_co': torch.from_numpy(R_oc).float(),
-            't_co': torch.from_numpy(t_oc).float(),
+            'R_co': R_oc,
+            't_co': t_oc,
             'stem': os.path.basename(stem),
             #'cam': meta['camera']
         }
