@@ -54,8 +54,8 @@ class TripletDataset(Dataset):
             t_ow = torch.tensor(clip_world["translation_m"], dtype=torch.float32)  # [3]
 
             # --- 3) Compose Object → Camera
-            R_oc = torch.matmul(R_wc, R_ow.unsqueeze(0))                        # [1,3,3]
-            t_oc = torch.matmul(R_wc, t_ow.view(1,3,1)).squeeze(-1) + t_wc      # [1,3]
+            R_oc = torch.matmul(R_wc, R_ow)                        # [1,3,3]
+            t_oc = torch.matmul(R_wc, t_ow) + t_wc      # [1,3]
 
             K = kaolin_cam_to_K(cam)
 
