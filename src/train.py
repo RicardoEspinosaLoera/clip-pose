@@ -193,7 +193,7 @@ def project_to_so3(R: torch.Tensor) -> torch.Tensor:
     return Rproj
 
 
-def run_epoch(model, renderer, loader, device, cfg, verts, mode,
+def run_epoch(model, renderer, loader, device, cfg, P_obj, D_obj, verts, mode,
               optimizer=None, wb_logger=None):
     is_train = (mode == 'train')
     model.train(is_train)
@@ -320,6 +320,11 @@ def main(cfg_path='config.yaml'):
     
     renderer = SoftMeshRenderer(verts, faces).to(device)
 
+    with torch.no_grad():
+        samp = sample_mesh_points(verts, faces, n=4096).to(device)
+        D_obj = torch.cdist(samp[None], samp[None]).amax().item()
+    P_obj = sample_mesh_points(verts, faces, n=cfg.get('eval', {}).get('add_points', 1500)).to(device)
+
     # ---- model/optim ----
     model = Regressor().to(device)
     opt = torch.optim.AdamW(model.parameters(),
@@ -343,13 +348,13 @@ def main(cfg_path='config.yaml'):
     try:
         for epoch in range(cfg['optim']['epochs']):
             # train
-            train_stats = run_epoch(model, renderer, tr, device, cfg, verts,
+            train_stats = run_epoch(model, renderer, tr, device, cfg, P_obj, D_obj,verts,
                                     mode='train', optimizer=opt, wb_logger=wb_log)
 
             # val (every N)
             val_stats = None
             if (epoch % val_every) == 0:
-                val_stats = run_epoch(model, renderer, va, device, cfg, verts,
+                val_stats = run_epoch(model, renderer, va, device, cfg, P_obj, D_obj,verts,
                                       mode='val', optimizer=None, wb_logger=wb_log)
 
             # epoch summary (use SAME global_step)
