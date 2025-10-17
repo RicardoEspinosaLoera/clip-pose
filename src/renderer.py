@@ -4,11 +4,6 @@ from kaolin.ops.mesh import index_vertices_by_faces
 
 DEBUG_ONCE = {"done": False}
 
-def pixels_to_ndc(x, y, H, W):
-    # pixel center -> NDC in [-1, 1]; top-left origin to center origin
-    x_ndc = (x + 0.5) / W * 2.0 - 1.0
-    y_ndc = (y + 0.5) / H * 2.0 - 1.0
-    return x_ndc, y_ndc
 
 def project_pixels(verts_cam, K):
     Z  = verts_cam[..., 2:3].clamp(min=1e-6)
@@ -177,7 +172,6 @@ class SoftMeshRenderer(torch.nn.Module):
                                     use_wminus1=WMINUS1,    # try True then False
                                     y_up=Y_UP)          # your Kaolin build looked y-down
                                     
-
                                 
         face_vertices_xy = torch.stack([u_ndc, v_ndc], dim=-1)  # [B,F,3,2]
         face_vertices_z  = fvcam[..., 2]                        # [B,F,3]

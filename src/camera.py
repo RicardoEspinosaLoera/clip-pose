@@ -14,6 +14,32 @@ def world_to_camera_from_vtk(C_w, F_w, u_w):
     t_wc = (-R_wc @ C).astype(np.float32)
     return R_wc, t_wc
 
+def K_from_pyvista(plotter):
+    cam = plotter.camera
+    W, H = map(int, plotter.window_size)
+
+    fov_deg = float(cam.GetViewAngle())
+    use_h   = bool(cam.GetUseHorizontalViewAngle())  # False ⇒ vertical FOV (default)
+
+    if use_h:
+        fx = (W * 0.5) / np.tan(np.deg2rad(fov_deg) * 0.5)
+        fy = fx * (H / W)
+    else:
+        fy = (H * 0.5) / np.tan(np.deg2rad(fov_deg) * 0.5)
+        fx = fy * (W / H)
+
+    # principal point from WindowCenter (VTK y-up, image y-down)
+    cx0, cy0 = (W - 1) * 0.5, (H - 1) * 0.5
+    wcx, wcy = cam.GetWindowCenter()
+    cx = cx0 + wcx * cx0
+    cy = cy0 - wcy * cy0   # flip sign
+
+    K = np.array([[fx, 0.0, cx],
+                  [0.0, fy, cy],
+                  [0.0, 0.0, 1.0]], dtype=np.float32)
+
+    return K
+
 
 def _normalize(v, eps=1e-9):
     n = np.linalg.norm(v)
@@ -30,6 +56,7 @@ def quat_wxyz_to_R(q):
 def kaolin_cam_to_K(cam):
     """Reads Kaolin-style intrinsics."""
     fx, fy, cx, cy = float(cam["fx"]), float(cam["fy"]), float(cam["cx"]), float(cam["cy"])
+    
     K = np.array([[fx, 0.,  cx],
                   [0.,  fy, cy],
                   [0.,  0.,  1.]], dtype=np.float32)

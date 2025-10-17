@@ -380,11 +380,9 @@ def pose_loss2(
     M_use  = F.interpolate(M.float(),  size=(Hs, Ws), mode='bilinear', align_corners=False).clamp(0,1) if mask_downsample>1 else M.float()
     BG_use = F.interpolate(BG.float(), size=(Hs, Ws), mode='bilinear', align_corners=False).clamp(0,1) if mask_downsample>1 else BG.float()
 
-    # Make K consistent with render size
-    K_use = K
-    
+   
     #Check if render using Kaolin is the same as Pyvista
-    rgb_hat, sil_hat = renderer(R_gt, t_gt, K_use, image_size=(Hs,Ws))
+    rgb_hat, sil_hat = renderer(R_gt, t_gt, K, image_size=(Hs,Ws))
     
     # ---- differentiable render (Kaolin DIB-R) ----
     #rgb_hat, sil_hat = renderer(R_pred, t_render, K_use, image_size=(Hs, Ws))
