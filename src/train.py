@@ -152,7 +152,7 @@ def load_mesh(path):
 
     m = trimesh.load(path, process=True)
 
-    V = torch.tensor(m.vertices, dtype=torch.float32) * float(scale)
+    V = torch.tensor(m.vertices, dtype=torch.float32)
     F = torch.tensor(m.faces.astype(np.int64), dtype=torch.long)
 
 
