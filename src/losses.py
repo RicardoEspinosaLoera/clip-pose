@@ -256,8 +256,8 @@ def _so3_angle(R1, R2, eps=1e-6):
 
 def rot_geodesic_loss(R_pred, R_gt, eps=1e-7):
     # optional: project to SO(3) if your head outputs aren't guaranteed orthonormal
-    # R_pred = _project_to_so3(R_pred)
-
+    #R_pred = _project_to_so3(R_pred)
+    print(R_pred.shape, R_gt.shape)
     Rt = torch.einsum('bij,bjk->bik', R_pred.transpose(1,2), R_gt)
     tr = Rt[:, 0, 0] + Rt[:, 1, 1] + Rt[:, 2, 2]
     cos = ((tr - 1.0) * 0.5).clamp(-1.0 + eps, 1.0 - eps)
