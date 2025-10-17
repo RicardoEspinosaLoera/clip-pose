@@ -148,33 +148,13 @@ class AddGaussianNoise(torch.nn.Module):
         return (x + noise).clamp(0, 1)
 
 
-def load_mesh(path, scale=1.0):
+def load_mesh(path):
 
     m = trimesh.load(path, process=True)
-    if isinstance(m, trimesh.Scene):
-        m = trimesh.util.concatenate([g for g in m.geometry.values()])
-    if (m.faces is None) or (m.faces.shape[1] != 3):
-        m = m.triangulate()
-    if not m.is_winding_consistent:
-        m.fix_normals()
 
     V = torch.tensor(m.vertices, dtype=torch.float32) * float(scale)
     F = torch.tensor(m.faces.astype(np.int64), dtype=torch.long)
 
-    # --- Mirror across X to fix left-hand / right-hand mismatch ---
-    V[:, 0] *= -1.0
-    # --- rotate −90° around X to match generator’s MODEL_UP = +X ---
-    theta = math.radians(-90)
-    R_xm90 = torch.tensor([
-        [1., 0., 0.],
-        [0.,  math.cos(theta), -math.sin(theta)],
-        [0.,  math.sin(theta),  math.cos(theta)]
-    ], dtype=torch.float32)
-
-    V = V @ R_xm90.T
-
-    # Re-center pivot
-    V -= V.mean(0, keepdim=True)
 
     return V, F
 
@@ -248,28 +228,6 @@ def run_epoch(model, renderer, loader, device, cfg, P_obj, D_obj, verts, mode,
         #R_gt = sixd_to_rotmat(R_gt)
         #R_gt = project_to_so3(R_gt)
         H, W = I.shape[-2], I.shape[-1]
-
-        #Rendering
-        #with torch.no_grad():
-        """
-        t_pred_render = t_pred.clone()
-        t_pred_render[:, 2] = torch.nn.functional.softplus(t_pred_render[:, 2]) + 1e-2  
-
-        # Compute an anchor t that guarantees the mesh is in-FOV for this R,K
-        t_anchor = fit_batch(renderer, R_pred.detach(), K, H, W, fill=fill)             
-
-        # Blend: early = mostly anchor (visible), later = network prediction
-        alpha = ramp_alpha(step, warmup=warmup, ramp=ramp)                               
-        t_fixed = (1.0 - alpha) * t_anchor + alpha * t_pred_render                       
-
-        #diagnose_visibility(renderer, R_pred, t_fixed, K, H, W)
-
-    
-        rgb, sil = renderer(R_pred, t_fixed, K, image_size=(H, W))
-        B, _, H, W = sil.shape
-        img = torch.zeros(B, 3, H, W, device=sil.device)  # black background
-
-        """
         
         loss, logs, I_comp, overlay, rgb = pose_loss2(R_pred, t_pred, R_gt, t_gt, D_batch, M, K, (H, W), renderer,BG, λR=0.5, λt=0.5, λmask=1.0, λbce=1.0, λdice=0.5, λedge=0.1, mask_downsample=2)
         

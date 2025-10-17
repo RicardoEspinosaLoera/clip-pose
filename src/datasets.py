@@ -3,7 +3,7 @@ import json, os
 import imageio.v2 as imageio
 import torch
 from torch.utils.data import Dataset
-from .camera import compose_camera_object, _rescale_K
+from .camera import kaolin_cam_to_K, world_to_camera_from_vtk
 import numpy as np
 
 class TripletDataset(Dataset):
@@ -41,9 +41,26 @@ class TripletDataset(Dataset):
             meta = json.load(f)
 
         try:
-            K, R_co, t_co = compose_camera_object(
-                meta['camera'], meta['clip'], H, W, strict=self.strict_tz
-            )
+            cam = meta['camera']
+            clip_world = meta['clip']['pose_world']
+            clip_se3 = meta['clip']['pose_se3']
+
+            R_wc_np, t_wc_np = world_to_camera_from_vtk(cam["position"], cam["focal_point"], cam["view_up"])
+            R_wc = torch.from_numpy(R_wc_np).float().to(device)
+            t_wc = torch.from_numpy(t_wc_np).float().to(device)
+
+            q = np.asarray(clip_world["quaternion_wxyz"], dtype=np.float32)
+            R_ow = torch.from_numpy(quat_wxyz_to_R(q)).float().to(device)       # [3,3]
+            t_ow = torch.tensor(clip_world["translation_m"], dtype=torch.float32, device=device)  # [3]
+
+            # --- 3) Compose Object → Camera
+            R_oc = torch.matmul(R_wc, R_ow.unsqueeze(0))                        # [1,3,3]
+            t_oc = torch.matmul(R_wc, t_ow.view(1,3,1)).squeeze(-1) + t_wc      # [1,3]
+
+            K = kaolin_cam_to_K(cam)
+
+
+
         except Exception as e:
             raise RuntimeError(f"[{os.path.basename(jpath)}] compose_camera_object failed: {e}")
 
@@ -65,8 +82,8 @@ class TripletDataset(Dataset):
             'bg': BG_t,
             'mask': M_t,
             'K': torch.from_numpy(K).float(),
-            'R_co': torch.from_numpy(R_co).float(),
-            't_co': torch.from_numpy(t_co).float(),
+            'R_co': torch.from_numpy(R_oc).float(),
+            't_co': torch.from_numpy(t_oc).float(),
             'stem': os.path.basename(stem),
             #'cam': meta['camera']
         }
