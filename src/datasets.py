@@ -45,20 +45,30 @@ class TripletDataset(Dataset):
             clip_world = meta['clip']['pose_world']
             clip_se3 = meta['clip']['pose_se3']
 
-            R_wc_np, t_wc_np = world_to_camera_from_vtk(cam["position"], cam["focal_point"], cam["view_up"])
-            R_wc = torch.from_numpy(R_wc_np).float()
-            t_wc = torch.from_numpy(t_wc_np).float()
+            fx, fy, cx, cy = cam["fx"], cam["fy"], cam["cx"], cam["cy"]  # W=800,H=544 from JSON
+            K = torch.tensor([[fx, 0.0, cx],
+                            [0.0, fy, cy],
+                            [0.0, 0.0, 1.0]], dtype=torch.float32)
 
-            q = np.asarray(clip_world["quaternion_wxyz"], dtype=np.float32)
-            R_ow = torch.from_numpy(quat_wxyz_to_R(q)).float()       # [3,3]
-            t_ow = torch.tensor(clip_world["translation_m"], dtype=torch.float32)  # [3]
+            # --- Extrinsics (object → camera) from pose_se3
+            q = torch.tensor(meta["clip"]["pose_se3"]["quaternion_wxyz"], dtype=torch.float32)
+            R = torch.from_numpy(quat_wxyz_to_R(q.numpy())).float()
+            t = torch.tensor(meta["clip"]["pose_se3"]["translation_m"], dtype=torch.float32)
 
-            # --- 3) Compose Object → Camera
-            R_oc = torch.matmul(R_wc, R_ow)                        # [1,3,3]
-            t_oc = torch.matmul(R_wc, t_ow) + t_wc      # [1,3]
+            # R_wc_np, t_wc_np = world_to_camera_from_vtk(cam["position"], cam["focal_point"], cam["view_up"])
+            # R_wc = torch.from_numpy(R_wc_np).float()
+            # t_wc = torch.from_numpy(t_wc_np).float()
+
+            # q = np.asarray(clip_world["quaternion_wxyz"], dtype=np.float32)
+            # R_ow = torch.from_numpy(quat_wxyz_to_R(q)).float()       # [3,3]
+            # t_ow = torch.tensor(clip_world["translation_m"], dtype=torch.float32)  # [3]
+
+            # # --- 3) Compose Object → Camera
+            # R_oc = torch.matmul(R_wc, R_ow)                        # [1,3,3]
+            # t_oc = torch.matmul(R_wc, t_ow) + t_wc      # [1,3]
 
 
-            K = kaolin_cam_to_K(cam, (H, W), affine_xy=None)  # [3,3]
+            #K = kaolin_cam_to_K(cam, (H, W), affine_xy=None)  # [3,3]
 
 
         except Exception as e:
@@ -82,8 +92,8 @@ class TripletDataset(Dataset):
             'bg': BG_t,
             'mask': M_t,
             'K': torch.from_numpy(K).float(),
-            'R_co': R_oc,
-            't_co': t_oc,
+            'R_co': torch.from_numpy(R),
+            't_co': torch.from_numpy(t),
             'stem': os.path.basename(stem),
             #'cam': meta['camera']
         }
