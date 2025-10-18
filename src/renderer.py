@@ -104,7 +104,6 @@ class SoftMeshRenderer(torch.nn.Module):
         self.register_buffer('v_rgb', per_vertex_rgb)        # (V,3)
         self.negate_z = negate_z
         self.flip_v = flip_v   # flip pixel y (v) => v' = H-1 - v
-        self.register_buffer('faces', faces.long())   # int64 for indexing
 
 
     def forward(self, R, t, K, image_size):
@@ -162,9 +161,9 @@ class SoftMeshRenderer(torch.nn.Module):
         WMINUS1 = False        # True matches your earlier path; else False uses W/H
         Y_UP = True          # you said your DIB-R path is y-down
 
-        sx, sy, tx, ty = (0.68, 1.0, 128.34, -0.5)
-        u_pix = u_pix * sx + tx
-        v_pix = v_pix * sy + ty
+        #sx, sy, tx, ty = (0.68, 1.0, 128.34, -0.5)
+        #u_pix = u_pix * sx + tx
+        #v_pix = v_pix * sy + ty
 
         # forward
         u_ndc, v_ndc = pixels_to_ndc(u_pix, v_pix, W, H,

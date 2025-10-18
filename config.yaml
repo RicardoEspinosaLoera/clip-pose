@@ -23,12 +23,6 @@ render:
   cull_backfaces: true        # match PyVista mask edge behavior
   constant_rgb: [0.75, 0.75, 0.75]
 
-camera:
-  fx: 1494.3                  # from vFOV≈30°, H=544, W=800
-  fy: 1015.1
-  cx: 399.5
-  cy: 271.5
-
 
 # ====== TRAIN / LOGGING ======
 train_io:
