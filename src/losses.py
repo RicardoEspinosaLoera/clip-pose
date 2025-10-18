@@ -374,11 +374,11 @@ def pose_loss2(
     L_T = normalized_t_loss(t_pred, t_gt, D_obj)
 
     H, W = image_size
-    Hs, Ws = (H//mask_downsample, W//mask_downsample) if mask_downsample>1 else (H, W)
+    #Hs, Ws = (H//mask_downsample, W//mask_downsample) if mask_downsample>1 else (H, W)
 
     # Downsample GT mask / BG to match render size
-    M_use  = F.interpolate(M.float(),  size=(Hs, Ws), mode='bilinear', align_corners=False).clamp(0,1) if mask_downsample>1 else M.float()
-    BG_use = F.interpolate(BG.float(), size=(Hs, Ws), mode='bilinear', align_corners=False).clamp(0,1) if mask_downsample>1 else BG.float()
+    #M_use  = F.interpolate(M.float(),  size=(Hs, Ws), mode='bilinear', align_corners=False).clamp(0,1) if mask_downsample>1 else M.float()
+    #BG_use = F.interpolate(BG.float(), size=(Hs, Ws), mode='bilinear', align_corners=False).clamp(0,1) if mask_downsample>1 else BG.float()
 
    
     #Check if render using Kaolin is the same as Pyvista
@@ -424,8 +424,8 @@ def pose_loss2(
         return loss, logs
 
     # ---- visuals (downsampled or upsample back) ----
-    I_comp  = composite(rgb_hat, BG_use, sil_eff)
-    overlay = overlay_mask_on_image(BG_use, sil_eff, color=(0,1,0), alpha=0.6, outline_px=2)
+    I_comp  = composite(rgb_hat, BG, sil_eff)
+    overlay = overlay_mask_on_image(BG, sil_eff, color=(0,1,0), alpha=0.6, outline_px=2)
 
     if mask_downsample > 1:
         I_comp  = F.interpolate(I_comp,  size=(H, W), mode='bilinear', align_corners=False).clamp(0,1)
