@@ -47,8 +47,6 @@ class TripletDataset(Dataset):
             clip_se3 = meta['clip']['pose_se3']
 
             R_wc, t_wc = world_to_camera_from_vtk(cam["position"], cam["focal_point"], cam["view_up"])
-            #R_wc = torch.from_numpy(R_wc_np).float()
-            #t_wc = torch.from_numpy(t_wc_np).float()
 
             q = np.asarray(clip_world["quaternion_wxyz"], dtype=np.float32)
             R_ow = torch.from_numpy(quat_wxyz_to_R(q)).float()       # [3,3]
@@ -59,7 +57,6 @@ class TripletDataset(Dataset):
             t_oc = torch.matmul(R_wc, t_ow) + t_wc      # [1,3]
 
             K = kaolin_cam_to_K(cam, image_size=(W, H))
-            #print("K from dataset:", K)
 
 
         except Exception as e:
