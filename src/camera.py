@@ -102,10 +102,7 @@ def kaolin_cam_to_K(cam, image_size=None, affine_xy=None):
     # --- Get size
     if image_size is not None:
         W, H = map(int, image_size)
-    elif "window_size" in cam:
-        W, H = map(int, cam["window_size"])
-    else:
-        raise ValueError("Missing window size for intrinsic computation.")
+        print(W,H)
 
     # --- FOV
     fov_deg = float(29.999999999999996)

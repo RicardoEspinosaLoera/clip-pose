@@ -35,6 +35,7 @@ class TripletDataset(Dataset):
         M_np  = imageio.imread(mpath)       # (H, W)
 
         H, W = I_np.shape[:2]
+        print(H, W)
 
         # --- Load metadata ---
         with open(jpath, 'r') as f:
@@ -57,7 +58,7 @@ class TripletDataset(Dataset):
             R_oc = torch.matmul(R_wc, R_ow)                        # [1,3,3]
             t_oc = torch.matmul(R_wc, t_ow) + t_wc      # [1,3]
 
-            K = kaolin_cam_to_K(cam)
+            K = kaolin_cam_to_K(cam, image_size=(W, H))
             print("K from dataset:", K)
 
 
