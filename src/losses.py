@@ -382,7 +382,7 @@ def pose_loss2(
 
    
     #Check if render using Kaolin is the same as Pyvista
-    rgb_hat, sil_hat = renderer(R_gt, t_gt, K, image_size=(Hs,Ws))
+    rgb_hat, sil_hat = renderer(R_gt, t_gt, K, image_size=(H,W))
     
     # ---- differentiable render (Kaolin DIB-R) ----
     #rgb_hat, sil_hat = renderer(R_pred, t_render, K_use, image_size=(Hs, Ws))
