@@ -58,7 +58,7 @@ class TripletDataset(Dataset):
             t_oc = torch.matmul(R_wc, t_ow) + t_wc      # [1,3]
 
 
-            K = kaolin_cam_to_K(cam)
+            K = kaolin_cam_to_K(cam, (H, W), affine_xy=None)  # [3,3]
 
 
         except Exception as e:
