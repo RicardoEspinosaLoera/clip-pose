@@ -92,7 +92,7 @@ class TripletDataset(Dataset):
             'image': I_t,
             'bg': BG_t,
             'mask': M_t,
-            'K': torch.from_numpy(K).float(),
+            'K': K,
             'R_co': R_oc,
             't_co': t_oc,
             'stem': os.path.basename(stem),
