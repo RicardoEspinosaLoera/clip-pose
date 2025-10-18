@@ -383,7 +383,8 @@ def pose_loss2(
    
     #Check if render using Kaolin is the same as Pyvista
     #rgb_hat, sil_hat = renderer(R_gt, t_gt, K, image_size=(H,W))
-    rgb_hat, sil_hat = renderer(R_pred, t_pred, K, image_size=(H,W))
+    with torch.no_grad():
+        rgb_hat, sil_hat = renderer(R_pred, t_pred, K, image_size=(H,W))
     
     sil_hat = sil_hat.float().clamp(0,1)  # (B,1,Hs,Ws)   
 
