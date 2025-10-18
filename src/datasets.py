@@ -57,6 +57,16 @@ class TripletDataset(Dataset):
             R_oc = torch.matmul(R_wc, R_ow)                        # [1,3,3]
             t_oc = torch.matmul(R_wc, t_ow) + t_wc      # [1,3]
 
+            # 2) Apply the SAME VTK→Kaolin orientation fix you used when you matched PyVista
+            R_fix = torch.tensor([
+                [ 1.0,  0.0,  0.0],
+                [ 0.0, -1.0,  0.0],
+                [ 0.0,  0.0, -1.0],
+            ], dtype=torch.float32)
+
+            R_oc = R_fix @ R_oc
+            t_oc = R_fix @ t_oc
+
             K = kaolin_cam_to_K(cam)
 
 
