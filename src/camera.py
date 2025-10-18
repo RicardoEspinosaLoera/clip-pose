@@ -46,21 +46,73 @@ def _normalize(v, eps=1e-9):
     return v / (n + eps)
 
 def quat_wxyz_to_R(q):
+    """Quaternion [w, x, y, z] → 3x3 rotation."""
     w, x, y, z = q
     return np.array([
-        [1 - 2*(y*y + z*z), 2*(x*y - z*w),     2*(x*z + y*w)],
-        [2*(x*y + z*w),     1 - 2*(x*x + z*z), 2*(y*z - x*w)],
-        [2*(x*z - y*w),     2*(y*z + z*w),     1 - 2*(x*x + y*y)]
+        [1 - 2*(y*y + z*z),     2*(x*y - z*w),       2*(x*z + y*w)],
+        [2*(x*y + z*w),         1 - 2*(x*x + z*z),   2*(y*z - x*w)],
+        [2*(x*z - y*w),         2*(y*z + x*w),       1 - 2*(x*x + y*y)]
     ], dtype=np.float32)
 
-def kaolin_cam_to_K(cam):
-    """Reads Kaolin-style intrinsics."""
-    fx, fy, cx, cy = float(cam["fx"]), float(cam["fy"]), float(cam["cx"]), float(cam["cy"])
-    
-    K = np.array([[fx, 0.,  cx],
-                  [0.,  fy, cy],
-                  [0.,  0.,  1.]], dtype=np.float32)
+def kaolin_cam_to_K(cam, image_size=None, affine_xy=None):
+    """
+    Build a 3×3 intrinsic matrix from a PyVista-style camera dict.
+
+    Args:
+        cam: dict with fields like
+             {
+               "view_angle": float,            # degrees (VTK's ViewAngle)
+               "use_horizontal_fov": bool,     # whether it's horizontal or vertical FOV
+               "window_center": [wcx, wcy],    # normalized shift
+               "position": [...],              # optional (ignored here)
+               "focal_point": [...],            # optional
+               "view_up": [...],                # optional
+               "window_size": [W, H],          # pixel dimensions
+             }
+        image_size: optional (W, H); overrides cam["window_size"] if given
+        affine_xy: optional (sx, sy, tx, ty); bake screenshot affine (PyVista compositor)
+    """
+    import numpy as np
+
+    # --- Get size
+    if image_size is not None:
+        W, H = map(int, image_size)
+    elif "window_size" in cam:
+        W, H = map(int, cam["window_size"])
+    else:
+        raise ValueError("Missing window size for intrinsic computation.")
+
+    # --- FOV
+    fov_deg = float(cam.get("view_angle", 30.0))
+    use_h = bool(cam.get("use_horizontal_fov", False))
+    if use_h:
+        fx = (W * 0.5) / np.tan(np.deg2rad(fov_deg) * 0.5)
+        fy = fx * (H / W)
+    else:
+        fy = (H * 0.5) / np.tan(np.deg2rad(fov_deg) * 0.5)
+        fx = fy * (W / H)
+
+    # --- Principal point from WindowCenter (VTK y-up → image y-down)
+    cx0, cy0 = (W - 1) * 0.5, (H - 1) * 0.5
+    wcx, wcy = cam.get("window_center", [0.0, 0.0])
+    cx = cx0 + wcx * cx0
+    cy = cy0 - wcy * cy0
+
+    # --- Base intrinsics
+    K = np.array([[fx, 0.0, cx],
+                  [0.0, fy, cy],
+                  [0.0, 0.0, 1.0]], dtype=np.float32)
+
+    # --- Optional 2D affine (screenshot correction)
+    if affine_xy is not None:
+        sx, sy, tx, ty = affine_xy
+        A = np.array([[sx, 0.0, tx],
+                      [0.0, sy, ty],
+                      [0.0, 0.0, 1.0]], dtype=np.float32)
+        K = A @ K
+
     return K
+
 	
 def sixd_to_rotmat(a):
     a1, a2 = a[..., :3], a[..., 3:]
