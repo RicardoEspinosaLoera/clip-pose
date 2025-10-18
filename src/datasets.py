@@ -35,7 +35,7 @@ class TripletDataset(Dataset):
         M_np  = imageio.imread(mpath)       # (H, W)
 
         H, W = I_np.shape[:2]
-        print(H, W)
+        print(W, H)
 
         # --- Load metadata ---
         with open(jpath, 'r') as f:
