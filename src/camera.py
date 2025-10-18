@@ -4,14 +4,39 @@ import numpy as np
 import torch
 
 def world_to_camera_from_vtk(C_w, F_w, u_w):
-    C, F, U = map(lambda x: np.asarray(x, dtype=np.float64), (C_w, F_w, u_w))
+    """
+    Compute world → camera extrinsics from VTK-style camera parameters.
 
-    z = F - C; z /= (np.linalg.norm(z)+1e-12)         # +Z forward
-    x = np.cross(z, U); x /= (np.linalg.norm(x)+1e-12)
+    Args:
+        C_w: camera position (3,)
+        F_w: camera focal point (3,)
+        u_w: camera view_up vector (3,)
+
+    Returns:
+        R_wc (torch.FloatTensor): [3,3] rotation matrix
+        t_wc (torch.FloatTensor): [3] translation vector
+    """
+    # Convert to NumPy arrays
+    C = np.asarray(C_w, dtype=np.float64)
+    F = np.asarray(F_w, dtype=np.float64)
+    U = np.asarray(u_w, dtype=np.float64)
+
+    # +Z forward
+    z = F - C
+    z /= (np.linalg.norm(z) + 1e-12)
+
+    # Build orthonormal basis
+    x = np.cross(z, U)
+    x /= (np.linalg.norm(x) + 1e-12)
     y = np.cross(x, z)
 
-    R_wc = np.stack([x, -y, z], 0).astype(np.float32)  # world→cam
-    t_wc = (-R_wc @ C).astype(np.float32)
+    # World → Camera rotation and translation
+    R_wc_np = np.stack([x, -y, z], axis=0).astype(np.float32)  # world→cam
+    t_wc_np = (-R_wc_np @ C).astype(np.float32)
+
+    # Return torch tensors (CPU; DataLoader-friendly)
+    R_wc = torch.from_numpy(R_wc_np)   # [3,3]
+    t_wc = torch.from_numpy(t_wc_np)   # [3]
     return R_wc, t_wc
 
 def K_from_pyvista(plotter):

@@ -51,11 +51,11 @@ class TripletDataset(Dataset):
                             [0.0, 0.0, 1.0]], dtype=torch.float32)
 
             # --- 1) World → Camera from PyVista camera (NumPy → Torch)
-            R_wc_np, t_wc_np = world_to_camera_from_vtk(
+            R_wc, t_wc = world_to_camera_from_vtk(
                 cam["position"], cam["focal_point"], cam["view_up"]
             )
-            R_wc = torch.from_numpy(R_wc_np).float()   # [3,3] on CPU (good for DataLoader)
-            t_wc = torch.from_numpy(t_wc_np).float()   # [3]
+            #R_wc = torch.from_numpy(R_wc_np).float()   # [3,3] on CPU (good for DataLoader)
+            #t_wc = torch.from_numpy(t_wc_np).float()   # [3]
 
             # --- 2) Object → World from JSON (NumPy → Torch)
             q = np.asarray(clip_world["quaternion_wxyz"], dtype=np.float32)
