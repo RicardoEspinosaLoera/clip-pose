@@ -108,8 +108,8 @@ def kaolin_cam_to_K(cam, image_size=None, affine_xy=None):
         raise ValueError("Missing window size for intrinsic computation.")
 
     # --- FOV
-    fov_deg = float(cam.get("view_angle", 30.0))
-    use_h = bool(cam.get("use_horizontal_fov", False))
+    fov_deg = float(29.999999999999996)
+    use_h = False
     if use_h:
         fx = (W * 0.5) / np.tan(np.deg2rad(fov_deg) * 0.5)
         fy = fx * (H / W)
@@ -119,7 +119,7 @@ def kaolin_cam_to_K(cam, image_size=None, affine_xy=None):
 
     # --- Principal point from WindowCenter (VTK y-up → image y-down)
     cx0, cy0 = (W - 1) * 0.5, (H - 1) * 0.5
-    wcx, wcy = cam.get("window_center", [0.0, 0.0])
+    wcx, wcy =(0.0, 0.0)
     cx = cx0 + wcx * cx0
     cy = cy0 - wcy * cy0
 
@@ -127,14 +127,6 @@ def kaolin_cam_to_K(cam, image_size=None, affine_xy=None):
     K = np.array([[fx, 0.0, cx],
                   [0.0, fy, cy],
                   [0.0, 0.0, 1.0]], dtype=np.float32)
-
-    # --- Optional 2D affine (screenshot correction)
-    if affine_xy is not None:
-        sx, sy, tx, ty = affine_xy
-        A = np.array([[sx, 0.0, tx],
-                      [0.0, sy, ty],
-                      [0.0, 0.0, 1.0]], dtype=np.float32)
-        K = A @ K
 
     return K
 

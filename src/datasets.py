@@ -45,31 +45,20 @@ class TripletDataset(Dataset):
             clip_world = meta['clip']['pose_world']
             clip_se3 = meta['clip']['pose_se3']
 
-            fx, fy, cx, cy = cam["fx"], cam["fy"], cam["cx"], cam["cy"]  # W=800,H=544 from JSON
-            K = torch.tensor([[fx, 0.0, cx],
-                            [0.0, fy, cy],
-                            [0.0, 0.0, 1.0]], dtype=torch.float32)
+            R_wc_np, t_wc_np = world_to_camera_from_vtk(cam["position"], cam["focal_point"], cam["view_up"])
+            R_wc = torch.from_numpy(R_wc_np).float()
+            t_wc = torch.from_numpy(t_wc_np).float()
 
-            # --- 1) World → Camera from PyVista camera (NumPy → Torch)
-            R_wc, t_wc = world_to_camera_from_vtk(
-                cam["position"], cam["focal_point"], cam["view_up"]
-            )
-            #R_wc = torch.from_numpy(R_wc_np).float()   # [3,3] on CPU (good for DataLoader)
-            #t_wc = torch.from_numpy(t_wc_np).float()   # [3]
-
-            # --- 2) Object → World from JSON (NumPy → Torch)
             q = np.asarray(clip_world["quaternion_wxyz"], dtype=np.float32)
-            R_ow = torch.from_numpy(quat_wxyz_to_R(q)).float()     # [3,3]
+            R_ow = torch.from_numpy(quat_wxyz_to_R(q)).float()       # [3,3]
             t_ow = torch.tensor(clip_world["translation_m"], dtype=torch.float32)  # [3]
-            # If your translations are actually in millimeters, uncomment:
-            # t_ow = t_ow / 1000.0
 
-            # --- 3) Compose Object → Camera (no batch dim here)
-            R_oc = R_wc @ R_ow              # [3,3]
-            t_oc = R_wc @ t_ow + t_wc       # [3]
+            # --- 3) Compose Object → Camera
+            R_oc = torch.matmul(R_wc, R_ow)                        # [1,3,3]
+            t_oc = torch.matmul(R_wc, t_ow) + t_wc      # [1,3]
 
-
-            #K = kaolin_cam_to_K(cam, (H, W), affine_xy=None)  # [3,3]
+            K = kaolin_cam_to_K(cam)
+            print("K from dataset:", K)
 
 
         except Exception as e:
@@ -92,7 +81,7 @@ class TripletDataset(Dataset):
             'image': I_t,
             'bg': BG_t,
             'mask': M_t,
-            'K': K,
+            'K': torch.from_numpy(K).float(),
             'R_co': R_oc,
             't_co': t_oc,
             'stem': os.path.basename(stem),
