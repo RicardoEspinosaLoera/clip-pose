@@ -31,7 +31,7 @@ def world_to_camera_from_vtk(C_w, F_w, u_w):
     y = np.cross(x, z)
 
     # World → Camera rotation and translation
-    R_wc_np = np.stack([x, y, z], axis=0).astype(np.float32)  # world→cam
+    R_wc_np = np.stack([x, -y, z], axis=0).astype(np.float32)  # world→cam
     t_wc_np = (-R_wc_np @ C).astype(np.float32)
 
     # Return torch tensors (CPU; DataLoader-friendly)

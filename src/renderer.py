@@ -66,7 +66,6 @@ class SoftMeshRenderer(torch.nn.Module):
 
         # -------- 2) prepare intrinsics for THIS raster size --------
         # K may have been built for a different pixel grid (e.g., window_size vs framebuffer)
-        K_use = K.clone()
 
         fx = K[:, 0, 0].view(-1, 1, 1)
         fy = K[:, 1, 1].view(-1, 1, 1)
@@ -92,7 +91,7 @@ class SoftMeshRenderer(torch.nn.Module):
         # --- choose ONE convention (this matches your DIB-R call) ---
         CENTER = 0.5          # try 0.5 (pixel centers) OR 0.0 (pixel corners), but be consistent
         WMINUS1 = False        # True matches your earlier path; else False uses W/H
-        Y_UP = True          # you said your DIB-R path is y-down
+        Y_UP = False          # you said your DIB-R path is y-down
 
         #sx, sy, tx, ty = (0.68, 1.0, 128.34, -0.5)
         #u_pix = u_pix * sx + tx
