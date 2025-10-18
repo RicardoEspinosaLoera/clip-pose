@@ -18,15 +18,7 @@ import trimesh
 @torch.no_grad()
 def save_or_log_overlay(I, I_comp, sil, rgb, M, out_dir, tag, step, to_wandb=False):
     os.makedirs(out_dir, exist_ok=True)
-    # I, I_comp: (B,3,H,W); sil, M: (B,1,H,W)
 
-    #print("I "+str(I[0].shape))
-    #print("I_comp "+str(I_comp[0].shape))
-    #print("I_sil "+str(sil[0].shape))
-    #print("I_M "+str(M[0].shape))
-
-    #H, W = I.shape[-2], I.shape[-1]               # spatial dims only
-    #I_comp_r = F.interpolate(I_comp, size=(H, W), mode='bilinear', align_corners=False).clamp(0, 1)
     H, W = I.shape[-2], I.shape[-1]
     rgb = F.interpolate(rgb, size=(H, W), mode='bilinear', align_corners=False).clamp(0,1)
     
@@ -38,8 +30,8 @@ def save_or_log_overlay(I, I_comp, sil, rgb, M, out_dir, tag, step, to_wandb=Fal
         M[0].detach().cpu().repeat(3,1,1),
         rgb[0].detach().cpu()
     ], nrow=4, normalize=True, scale_each=True)
-    #path = os.path.join(out_dir, f"{tag}_{step:06d}.png")
-    #vutils.save_image(grid, path)
+
+
     if to_wandb and wandb is not None:
         wandb.log({f"{tag}/overlay": wandb.Image(grid)})
 

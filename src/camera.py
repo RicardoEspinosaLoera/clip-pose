@@ -97,13 +97,9 @@ def kaolin_cam_to_K(cam, image_size=None, affine_xy=None):
         image_size: optional (W, H); overrides cam["window_size"] if given
         affine_xy: optional (sx, sy, tx, ty); bake screenshot affine (PyVista compositor)
     """
-    import numpy as np
-
     # --- Get size
     if image_size is not None:
         W, H = map(int, image_size)
-        print(W,H)
-
     # --- FOV
     fov_deg = float(29.999999999999996)
     use_h = False
