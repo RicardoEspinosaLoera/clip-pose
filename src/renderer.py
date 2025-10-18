@@ -9,10 +9,6 @@ def gather_by_faces(vertices_features, faces):
     faces: [F,3] long
     returns: [B,F,3,K]
     """
-    if isinstance(vertices_features, np.ndarray):
-        vertices_features = torch.from_numpy(vertices_features)
-    if isinstance(faces, np.ndarray):
-        faces = torch.from_numpy(faces)
     faces = faces.to(torch.long).contiguous()
     vf = vertices_features
     if vf.dim() == 2:
@@ -28,7 +24,7 @@ def pixels_to_ndc(u, v, W, H, *, center_offset=0.5, use_wminus1=False, y_up=True
     if y_up:
         y = -y
     return x, y
-    
+
 
 class SoftMeshRenderer(torch.nn.Module):
     def __init__(self, verts, faces, per_vertex_rgb=None, negate_z=False, flip_v=False):
