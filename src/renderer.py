@@ -2,75 +2,6 @@ import torch
 from kaolin.render.mesh import dibr_rasterization as dibr
 from kaolin.ops.mesh import index_vertices_by_faces
 
-DEBUG_ONCE = {"done": False}
-
-
-def project_pixels(verts_cam, K):
-    Z  = verts_cam[..., 2:3].clamp(min=1e-6)
-    xy = verts_cam[..., :2] / Z
-    fx = K[:, 0, 0].view(-1, 1, 1)
-    fy = K[:, 1, 1].view(-1, 1, 1)
-    cx = K[:, 0, 2].view(-1, 1, 1)
-    cy = K[:, 1, 2].view(-1, 1, 1)
-    u = fx * xy[..., 0:1] + cx
-    v = fy * xy[..., 1:2] + cy
-    return torch.cat([u, v, Z], dim=-1)  # (B,V,3) [u,v,z]
-
-"""
-def camera_extrinsics_from_pyvista(cam, device):
-    pos = np.array(cam["position"], dtype=np.float32)
-    focal = np.array(cam["focal_point"], dtype=np.float32)
-    up = np.array(cam["view_up"], dtype=np.float32)
-
-    # PyVista: looks along (focal - pos)
-    forward = focal - pos
-    forward /= np.linalg.norm(forward)
-    right = np.cross(forward, up)
-    right /= np.linalg.norm(right)
-    up = np.cross(right, forward)
-
-    # Camera-to-world (VTK)
-    R_c2w = np.stack([right, up, -forward], axis=1)
-
-    # World-to-camera
-    R_w2c = R_c2w.T
-    t_w2c = -R_w2c @ pos
-
-    # Convert to Kaolin (+Z forward)
-    R_fix = np.diag([1, 1, -1])
-    R = torch.from_numpy(R_fix @ R_w2c).to(device).float().unsqueeze(0)
-    t = torch.from_numpy(R_fix @ t_w2c).to(device).float().unsqueeze(0)
-    return R, t"""
-
-def camera_extrinsics_from_pyvista(cam_dict, device):
-    pos   = np.array(cam_dict["position"],    dtype=np.float32)
-    focal = np.array(cam_dict["focal_point"], dtype=np.float32)
-    vup   = np.array(cam_dict["view_up"],     dtype=np.float32)
-
-    fwd = focal - pos
-    fwd = fwd / (np.linalg.norm(fwd) + 1e-12)
-
-    # orthogonalize vup to fwd
-    vup = vup - fwd * np.dot(vup, fwd)
-    vup = vup / (np.linalg.norm(vup) + 1e-12)
-
-    right = np.cross(fwd, vup)
-    right = right / (np.linalg.norm(right) + 1e-12)
-    up    = np.cross(right, fwd)
-
-    # VTK/OpenGL camera: -Z forward in camera -> columns [right, up, -fwd]
-    R_c2w = np.stack([right, up, -fwd], axis=1)
-    R_w2c = R_c2w.T
-    t_w2c = -R_w2c @ pos
-
-    # Flip camera to +Z forward (Kaolin-friendly)
-    R_fix = np.diag([1., 1., -1.])
-    R_w2c = R_fix @ R_w2c
-    t_w2c = R_fix @ t_w2c
-
-    R = torch.tensor(R_w2c, dtype=torch.float32, device=device).unsqueeze(0)
-    t = torch.tensor(t_w2c, dtype=torch.float32, device=device).unsqueeze(0)
-    return R, t
 
 def gather_by_faces(vertices_features, faces):
     """
@@ -78,11 +9,16 @@ def gather_by_faces(vertices_features, faces):
     faces: [F,3] long
     returns: [B,F,3,K]
     """
+    if isinstance(vertices_features, np.ndarray):
+        vertices_features = torch.from_numpy(vertices_features)
+    if isinstance(faces, np.ndarray):
+        faces = torch.from_numpy(faces)
     faces = faces.to(torch.long).contiguous()
     vf = vertices_features
     if vf.dim() == 2:
         vf = vf.unsqueeze(0)  # -> [1,V,K]
     return vf[:, faces, :]    # [B,F,3,K]
+
 
 def pixels_to_ndc(u, v, W, H, *, center_offset=0.5, use_wminus1=False, y_up=True):
     u = u + center_offset
@@ -92,6 +28,7 @@ def pixels_to_ndc(u, v, W, H, *, center_offset=0.5, use_wminus1=False, y_up=True
     if y_up:
         y = -y
     return x, y
+    
 
 class SoftMeshRenderer(torch.nn.Module):
     def __init__(self, verts, faces, per_vertex_rgb=None, negate_z=False, flip_v=False):

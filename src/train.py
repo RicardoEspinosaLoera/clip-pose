@@ -43,51 +43,6 @@ def save_or_log_overlay(I, I_comp, sil, rgb, M, out_dir, tag, step, to_wandb=Fal
     if to_wandb and wandb is not None:
         wandb.log({f"{tag}/overlay": wandb.Image(grid)})
 
-def fit_mesh_in_fov(verts, R, K, H, W, fill=0.9):
-    """
-    Returns t so v_cam = R @ v + t:
-      - projects the mesh center to (cx,cy)
-      - chooses a depth so the mesh fits within the frame with margin `fill`
-    """
-    device = verts.device
-    R = R.to(device).float(); K = K.to(device).float()
-
-    fx, fy = K[0,0], K[1,1]
-    cx, cy = K[0,2], K[1,2]
-
-    c_world    = verts.mean(dim=0)              # (3,)
-    v_centered = verts - c_world                # (V,3)
-    v_cam_rot  = (R @ v_centered.t()).t()       # (V,3)
-
-    rx = v_cam_rot[:,0].abs().max()
-    ry = v_cam_rot[:,1].abs().max()
-
-    half_w = torch.minimum(cx, (W - 1 - cx))
-    half_h = torch.minimum(cy, (H - 1 - cy))
-
-    eps = torch.tensor(1e-6, device=device)
-    need_zx = fx * rx / torch.maximum(fill * half_w, eps)
-    need_zy = fy * ry / torch.maximum(fill * half_h, eps)
-    z_cam   = torch.maximum(need_zx, need_zy).clamp_min(1e-2)
-
-    Rc = R @ c_world
-    t  = torch.tensor([0.0, 0.0, z_cam], device=device) - Rc
-    return t
-
-@torch.no_grad()
-def fit_batch(renderer, R, K, H, W, fill=0.9):
-    """Compute anchor t per item that guarantees visibility for the current R,K."""
-    device = renderer.verts.device
-    R = R.to(device).float(); K = K.to(device).float()
-    return torch.stack([fit_mesh_in_fov(renderer.verts, R[b], K[b], H, W, fill) for b in range(R.shape[0])], 0)
-
-def ramp_alpha(step, warmup=500, ramp=4000):
-    if step <= warmup:
-        return 0.0
-    t = (step - warmup) / max(ramp, 1)
-    t = min(max(t, 0.0), 1.0)
-    # cosine ease-in-out using torch only
-    return float(0.5 - 0.5 * torch.cos(torch.tensor(t) * torch.pi))
 
 def overlay_mask_on_image(
     img,        # (B,3,H,W) float in [0,1]   (your picture)
@@ -206,10 +161,6 @@ def run_epoch(model, renderer, loader, device, cfg, P_obj, D_obj, verts, mode,
     count = 0
     pbar = tqdm.tqdm(loader, desc=f"{mode}")
 
-    # anchor/blend config
-    fill = cfg.get('render', {}).get('fit_fill', 0.85)                 # NEW ⟶ margin
-    warmup = cfg.get('train_io', {}).get('anchor_warmup_steps', 500)   # NEW ⟶ schedule
-    ramp   = cfg.get('train_io', {}).get('anchor_ramp_steps', 4000)    # NEW
 
     for step, batch in enumerate(pbar, 1):
         I    = batch['image'].to(device)
@@ -219,6 +170,8 @@ def run_epoch(model, renderer, loader, device, cfg, P_obj, D_obj, verts, mode,
         K  = batch['K'].to(device)
         M  = batch['mask'].to(device)
         #cam  = batch['cam']
+
+        print("R, t",R_gt,t_gt)
 
         B = I.size(0)
         D_batch = torch.as_tensor(D_obj, device=device, dtype=I.dtype).expand(B)  # (B,)
