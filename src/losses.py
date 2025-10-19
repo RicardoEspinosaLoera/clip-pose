@@ -428,7 +428,7 @@ def pose_loss2(
 
     has_fg = (M_use.sum(dim=(1,2,3)) > 10).float().view(-1,1,1,1)
     sil_eff = sil_hat * has_fg
-    M_eff   = M   * has_fg
+    M_eff   = M_use   * has_fg
 
     if λmask > 0.0 and has_fg.any():
         bce_val  = F.binary_cross_entropy(sil_eff.clamp(1e-6,1-1e-6), M_eff)
