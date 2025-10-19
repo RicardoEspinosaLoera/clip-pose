@@ -104,6 +104,8 @@ class SoftMeshRenderer(torch.nn.Module):
             sy = sy * (Hs / H)
             tx = tx * (Ws / W)
             ty = ty * (Hs / H)
+            H = Hs
+            W = Ws
         
         u_pix = u_pix * sx + tx
         v_pix = v_pix * sy + ty
