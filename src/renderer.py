@@ -52,7 +52,7 @@ class SoftMeshRenderer(torch.nn.Module):
         - Conversion to Kaolin is handled externally.
         """
         B = R.shape[0]
-        H, W = image_size_orginal
+        H, W = image_size
         device = self.verts.device
         R, t, K = R.to(device).float(), t.to(device).float(), K.to(device).float()
         
