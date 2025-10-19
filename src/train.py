@@ -26,7 +26,7 @@ def save_or_log_overlay(I, I_comp, sil, rgb, M, out_dir, tag, step, to_wandb=Fal
     grid = vutils.make_grid([
         I[0].detach().cpu(),
         I_comp[0].detach().cpu(),
-        sil[0].detach().cpu(),
+        #sil[0].detach().cpu(),
         M[0].detach().cpu().repeat(3,1,1),
         rgb[0].detach().cpu()
     ], nrow=4, normalize=True, scale_each=True)

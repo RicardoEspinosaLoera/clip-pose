@@ -145,7 +145,7 @@ class SoftMeshRenderer(torch.nn.Module):
         kd        = 1.00
         ks        = 0.60
         shininess = 24.0
-        exposure_ev = 0.0         # try 0.5~1.0 if PyVista looks brighter
+        exposure_ev = 1.0         # try 0.5~1.0 if PyVista looks brighter
         gamma_out  = 2.2          # linear -> sRGB
 
         eps = 1e-8
