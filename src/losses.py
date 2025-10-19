@@ -419,8 +419,8 @@ def pose_loss2(
         scaled = False
 
     #rgb_hat, sil_hat = renderer(R_gt, t_gt, K, image_size=(H,W))
-    with torch.no_grad():
-        rgb_hat, sil_hat = renderer(R_pred, t_pred, K_use, new_image_size=(Hs,Ws), image_size_orginal=(H,W), scaled = scaled)
+    #with torch.no_grad():
+    rgb_hat, sil_hat = renderer(R_pred, t_pred, K_use, new_image=(Hs,Ws))
     
     sil_hat = sil_hat.float().clamp(0,1)  # (B,1,Hs,Ws)   
 
