@@ -95,10 +95,10 @@ class SoftMeshRenderer(torch.nn.Module):
         Y_UP = True          # you said your DIB-R path is y-down
 
         #Normal affine vaues
-        # sx, sy, tx, ty = (0.68, 1.0, 128.34, -0.5)
+        sx, sy, tx, ty = (0.68, 1.0, 128.34, -0.5)
 
         # W/ 2 and H/2 to center, then scale to fill
-        sx, sy, tx, ty = (0.34, 0.5, 64.17, -0.25)
+        #sx, sy, tx, ty = (0.34, 0.5, 64.17, -0.25)
         
         u_pix = u_pix * sx + tx
         v_pix = v_pix * sy + ty
