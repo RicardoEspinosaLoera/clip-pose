@@ -39,7 +39,7 @@ class SoftMeshRenderer(torch.nn.Module):
         self.flip_v = flip_v   # flip pixel y (v) => v' = H-1 - v
 
 
-    def forward(self, R, t, K, new_image_size, image_size_orginal, scaled = False):
+    def forward(self, R, t, K,image_size):
         
         """
         Forward render pass to match dataset ground truth.
@@ -53,8 +53,6 @@ class SoftMeshRenderer(torch.nn.Module):
         """
         B = R.shape[0]
         H, W = image_size_orginal
-        if scaled:
-            Hs, Ws = new_image_size
         device = self.verts.device
         R, t, K = R.to(device).float(), t.to(device).float(), K.to(device).float()
         
@@ -98,14 +96,6 @@ class SoftMeshRenderer(torch.nn.Module):
 
 
         sx, sy, tx, ty = (0.68, 1.0, 128.34, -0.5)
-
-        if(scaled == True):
-            sx = sx * (Ws / W)
-            sy = sy * (Hs / H)
-            tx = tx * (Ws / W)
-            ty = ty * (Hs / H)
-            H = Hs
-            W = Ws
         
         u_pix = u_pix * sx + tx
         v_pix = v_pix * sy + ty
