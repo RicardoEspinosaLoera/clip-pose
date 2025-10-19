@@ -359,6 +359,33 @@ def so3_reg(R):
     det_pen = (torch.det(R) - 1.0).pow(2).mean()
     return ortho + 0.1 * det_pen
 
+def scale_K(K, src_size, dst_size):
+    """
+    Scale camera intrinsics from src_size (H,W) to dst_size (H2,W2).
+    Works with batched K: [B,3,3] or unbatched [3,3].
+    """
+    import torch
+    H, W   = src_size
+    H2, W2 = dst_size
+    sx = W2 / W
+    sy = H2 / H
+
+    K_out = K.clone()
+    if K_out.dim() == 2:  # [3,3]
+        K_out[0,0] *= sx         # fx
+        K_out[1,1] *= sy         # fy
+        K_out[0,2] *= sx         # cx
+        K_out[1,2] *= sy         # cy
+        K_out[0,1] *= sx         # skew (usually 0), u scales with width
+    else:                 # [B,3,3]
+        K_out[:,0,0] *= sx
+        K_out[:,1,1] *= sy
+        K_out[:,0,2] *= sx
+        K_out[:,1,2] *= sy
+        K_out[:,0,1] *= sx
+    return K_out
+
+
 def pose_loss2(
     R_pred, t_pred, R_gt, t_gt, D_obj,
     M, K, image_size, renderer, BG,
@@ -374,17 +401,22 @@ def pose_loss2(
     L_T = normalized_t_loss(t_pred, t_gt, D_obj)
 
     H, W = image_size
-    #Hs, Ws = (H//mask_downsample, W//mask_downsample) if mask_downsample>1 else (H, W)
+    Hs, Ws = (H//mask_downsample, W//mask_downsample) if mask_downsample>1 else (H, W)
 
     # Downsample GT mask / BG to match render size
-    #M_use  = F.interpolate(M.float(),  size=(Hs, Ws), mode='bilinear', align_corners=False).clamp(0,1) if mask_downsample>1 else M.float()
-    #BG_use = F.interpolate(BG.float(), size=(Hs, Ws), mode='bilinear', align_corners=False).clamp(0,1) if mask_downsample>1 else BG.float()
+    M_use  = F.interpolate(M.float(),  size=(Hs, Ws), mode='bilinear', align_corners=False).clamp(0,1) if mask_downsample>1 else M.float()
+    BG_use = F.interpolate(BG.float(), size=(Hs, Ws), mode='bilinear', align_corners=False).clamp(0,1) if mask_downsample>1 else BG.float()
 
-   
-    #Check if render using Kaolin is the same as Pyvista
+    if (Hs, Ws) != (H, W):
+        # Case A: rendering at low-res
+        K_use = scale_K(K, (H, W), (Hs, Ws))
+    else:
+        # Case B: rendering at full-res
+        K_use = K
+
     #rgb_hat, sil_hat = renderer(R_gt, t_gt, K, image_size=(H,W))
-    with torch.no_grad():
-        rgb_hat, sil_hat = renderer(R_pred, t_pred, K, image_size=(H,W))
+    #with torch.no_grad():
+    rgb_hat, sil_hat = renderer(R_pred, t_pred, K_use, image_size=(Hs,Ws))
     
     sil_hat = sil_hat.float().clamp(0,1)  # (B,1,Hs,Ws)   
 
@@ -394,7 +426,7 @@ def pose_loss2(
     dice_val = torch.tensor(0., device=R_pred.device)
     edge_val = torch.tensor(0., device=R_pred.device)
 
-    has_fg = (M.sum(dim=(1,2,3)) > 10).float().view(-1,1,1,1)
+    has_fg = (M_use.sum(dim=(1,2,3)) > 10).float().view(-1,1,1,1)
     sil_eff = sil_hat * has_fg
     M_eff   = M   * has_fg
 
@@ -422,8 +454,8 @@ def pose_loss2(
         return loss, logs
 
     # ---- visuals (downsampled or upsample back) ----
-    I_comp  = composite(rgb_hat, BG, sil_eff)
-    overlay = overlay_mask_on_image(BG, sil_eff, color=(0,1,0), alpha=0.6, outline_px=2)
+    I_comp  = composite(rgb_hat, BG_use, sil_eff)
+    overlay = overlay_mask_on_image(BG_use, sil_eff, color=(0,1,0), alpha=0.6, outline_px=2)
 
     if mask_downsample > 1:
         I_comp  = F.interpolate(I_comp,  size=(H, W), mode='bilinear', align_corners=False).clamp(0,1)
