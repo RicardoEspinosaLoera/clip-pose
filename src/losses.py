@@ -407,16 +407,20 @@ def pose_loss2(
     M_use  = F.interpolate(M.float(),  size=(Hs, Ws), mode='bilinear', align_corners=False).clamp(0,1) if mask_downsample>1 else M.float()
     BG_use = F.interpolate(BG.float(), size=(Hs, Ws), mode='bilinear', align_corners=False).clamp(0,1) if mask_downsample>1 else BG.float()
 
+    scaled = False
     if (Hs, Ws) != (H, W):
         # Case A: rendering at low-res
         K_use = scale_K(K, (H, W), (Hs, Ws))
+        scaled = True
+
     else:
         # Case B: rendering at full-res
         K_use = K
+        scaled = False
 
     #rgb_hat, sil_hat = renderer(R_gt, t_gt, K, image_size=(H,W))
     with torch.no_grad():
-        rgb_hat, sil_hat = renderer(R_gt, R_gt, K_use, image_size=(Hs,Ws))
+        rgb_hat, sil_hat = renderer(R_pred, t_pred, K_use, new_image_size=(Hs,Ws) image_size_orginal=(H,W), scaled = scaled)
     
     sil_hat = sil_hat.float().clamp(0,1)  # (B,1,Hs,Ws)   
 

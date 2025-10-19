@@ -39,7 +39,7 @@ class SoftMeshRenderer(torch.nn.Module):
         self.flip_v = flip_v   # flip pixel y (v) => v' = H-1 - v
 
 
-    def forward(self, R, t, K, image_size):
+    def forward(self, R, t, K, new_image_size, image_size_orginal, scaled = False):
         
         """
         Forward render pass to match dataset ground truth.
@@ -94,7 +94,15 @@ class SoftMeshRenderer(torch.nn.Module):
         WMINUS1 = False        # True matches your earlier path; else False uses W/H
         Y_UP = True          # you said your DIB-R path is y-down
 
+
         sx, sy, tx, ty = (0.68, 1.0, 128.34, -0.5)
+
+        if(scaled == True):
+            sx = sx * (Ws / W)
+            sy = sy * (Hs / H)
+            tx = tx * (Ws / W)
+            ty = ty * (Hs / H)
+        
         u_pix = u_pix * sx + tx
         v_pix = v_pix * sy + ty
 
