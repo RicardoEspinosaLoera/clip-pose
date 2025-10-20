@@ -313,13 +313,6 @@ class SoftMeshRenderer(torch.nn.Module):
     #     return rgb, sil
 
 
-
-# expects you already have:
-# - self.verts  [V,3] (torch)
-# - self.faces  [F,3] (long)
-# - self.v_rgb  [V,3] (torch, assumed sRGB from image; we linearize below)
-# - pixels_to_ndc(u,v,W,H, center_offset, use_wminus1, y_up)
-# - gather_by_faces(feat, faces) -> [B,F,3,C]
     def forward(self, R, t, K, image_size):
         """
         Kaolin DIB-R forward with VTK-like light kit and correct color-space.
@@ -343,7 +336,7 @@ class SoftMeshRenderer(torch.nn.Module):
         exposure_ev    = 5.00          # small lift in linear space
         wb_gain        = torch.tensor([1.06, 1.00, 0.94], device=device)  # warmer
 
-        # PyVista framing quirk (affine on pixel coords, not shading)
+        # PyVista framing quirk (affine on pixel coords)
         sx, sy, tx, ty = (0.68, 1.0, 128.34, -0.5)
         BASE_W, BASE_H = 800, 544
 
