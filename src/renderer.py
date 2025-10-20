@@ -345,6 +345,10 @@ class SoftMeshRenderer(torch.nn.Module):
 
         # PyVista framing quirk (affine on pixel coords, not shading)
         sx, sy, tx, ty = (0.68, 1.0, 128.34, -0.5)
+        BASE_W, BASE_H = 800, 544
+
+        tx = tx * (W / BASE_W)
+        ty = ty * (H / BASE_H)
 
         # Rasterization coordinate options
         CENTER   = 0.5
