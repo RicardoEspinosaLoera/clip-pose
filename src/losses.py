@@ -27,23 +27,13 @@ import torch.nn.functional as F
 def composite(
     rgb, bg, sil,
     *,
-    premultiplied=True,     # your renderer returns premultiplied FG (recommended)
-    bleed_iters=1,          # 0/1/2 — outward color bleed to remove dark fringe
-    harden_gamma=None,      # e.g. 0.8 to slightly tighten the silhouette
-    return_linear=False     # set True if you want linear output for losses
+    premultiplied=True,
+    bleed_iters=1,
+    harden_gamma=None,
+    return_linear=False
 ):
-    """
-    rgb: (B,3,Hr,Wr)  FG render in sRGB [0,1]. Often already premultiplied by `sil`.
-    bg:  (B,3,H,W)    background image in sRGB [0,1]
-    sil: (B,1,*,*)    alpha in [0,1] or {0,255}
-
-    Returns: (B,3,H,W) sRGB [0,1] by default (or linear if return_linear=True)
-    """
-
     def _ensure_nchw(x):
-        if x.dim() == 3:  # (C,H,W)
-            return x.unsqueeze(0)
-        return x
+        return x if x.dim() == 4 else x.unsqueeze(0)
 
     def srgb_to_linear(x):
         a = 0.055
@@ -54,24 +44,34 @@ def composite(
         return torch.where(x <= 0.0031308, 12.92 * x, (1 + a) * x ** (1/2.4) - a)
 
     def alpha_bleed(rgb_lin, alpha, iters=1):
-        """Bleed FG colors under the edge so partial coverage blends with FG, not black."""
+        """
+        Depthwise 3x3 blur of premultiplied color divided by blurred alpha.
+        Works for C=1 or C=3.
+        """
         if iters <= 0:
             return rgb_lin
-        # simple 3x3 box filter in linear space
-        k = torch.ones(1, 1, 3, 3, device=rgb_lin.device, dtype=rgb_lin.dtype) / 9.0
+        B, C, H, W = rgb_lin.shape
         a = alpha.clamp(0, 1)
         c = rgb_lin
+
+        # depthwise kernel for color (C groups) and single-channel kernel for alpha
+        k_c = torch.ones(C, 1, 3, 3, device=c.device, dtype=c.dtype) / 9.0
+        k_a = torch.ones(1, 1, 3, 3, device=a.device, dtype=a.dtype) / 9.0
+
         for _ in range(iters):
-            ca = c * a
-            ca_blur = F.conv2d(ca, k, padding=1, groups=1)
-            a_blur  = F.conv2d(a,  k, padding=1, groups=1).clamp_min(1e-6)
-            c = torch.where((a > 0) & (a < 1), ca_blur / a_blur, c)
+            ca      = c * a                                          # premultiplied color
+            ca_blur = F.conv2d(ca, k_c, padding=1, groups=C)         # per-channel blur
+            a_blur  = F.conv2d(a,  k_a, padding=1, groups=1).clamp_min(1e-6)
+
+            # fill only soft-edge zone with neighborhood average color
+            edge = ((a > 0) & (a < 1)).expand(B, C, H, W)
+            c    = torch.where(edge, ca_blur / a_blur, c)
         return c
 
     # ---------- shape & range ----------
-    rgb = _ensure_nchw(rgb).float().clamp(0, 1)
-    bg  = _ensure_nchw(bg ).float().clamp(0, 1)
-    sil = _ensure_nchw(sil).float()
+    rgb = _ensure_nchw(rgb).float().clamp(0, 1).contiguous()
+    bg  = _ensure_nchw(bg ).float().clamp(0, 1).contiguous()
+    sil = _ensure_nchw(sil).float().contiguous()
     if sil.shape[1] != 1:
         sil = sil[:, :1, ...]
     if sil.max() > 1.5:
@@ -83,19 +83,16 @@ def composite(
     if sil.shape[-2:] != (H, W):
         sil = F.interpolate(sil, size=(H, W), mode='bilinear', align_corners=False).clamp(0, 1)
 
-    # Optional: slightly harden the edge (helps tiny dark rims)
     if harden_gamma is not None:
         sil = sil.clamp(0, 1).pow(harden_gamma)
 
-    # ---------- composite in LINEAR space with premultiplied alpha ----------
+    # ---------- composite in linear (premultiplied) ----------
     rgb_lin = srgb_to_linear(rgb)
     bg_lin  = srgb_to_linear(bg)
 
-    # If FG wasn’t premultiplied inside the renderer, do it now
     if not premultiplied:
         rgb_lin = rgb_lin * sil
 
-    # Bleed FG colors into the soft edge to avoid black mixing
     if bleed_iters and bleed_iters > 0:
         rgb_lin = alpha_bleed(rgb_lin, sil, iters=bleed_iters)
 
