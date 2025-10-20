@@ -20,34 +20,92 @@ def _ensure_nchw(x):
         raise ValueError(f"Expected NCHW, got {x.shape}")
     return x
 
+import torch
+import torch.nn.functional as F
+
 @torch.no_grad()
-def composite(rgb, bg, sil):
+def composite(
+    rgb, bg, sil,
+    *,
+    premultiplied=True,     # your renderer returns premultiplied FG (recommended)
+    bleed_iters=1,          # 0/1/2 — outward color bleed to remove dark fringe
+    harden_gamma=None,      # e.g. 0.8 to slightly tighten the silhouette
+    return_linear=False     # set True if you want linear output for losses
+):
     """
-    rgb: rendered clip (B,3,Hr,Wr) in [0,1]
-    bg:  your real image (B,3,H,W) in [0,1]
-    sil: silhouette alpha (B,1,*,*) in [0,1] or {0,255}
-    returns: (B,3,H,W)
+    rgb: (B,3,Hr,Wr)  FG render in sRGB [0,1]. Often already premultiplied by `sil`.
+    bg:  (B,3,H,W)    background image in sRGB [0,1]
+    sil: (B,1,*,*)    alpha in [0,1] or {0,255}
+
+    Returns: (B,3,H,W) sRGB [0,1] by default (or linear if return_linear=True)
     """
-    rgb = _ensure_nchw(rgb).float().clamp(0,1)
-    bg  = _ensure_nchw(bg).float().clamp(0,1)
+
+    def _ensure_nchw(x):
+        if x.dim() == 3:  # (C,H,W)
+            return x.unsqueeze(0)
+        return x
+
+    def srgb_to_linear(x):
+        a = 0.055
+        return torch.where(x <= 0.04045, x / 12.92, ((x + a) / (1 + a)) ** 2.4)
+
+    def linear_to_srgb(x):
+        a = 0.055
+        return torch.where(x <= 0.0031308, 12.92 * x, (1 + a) * x ** (1/2.4) - a)
+
+    def alpha_bleed(rgb_lin, alpha, iters=1):
+        """Bleed FG colors under the edge so partial coverage blends with FG, not black."""
+        if iters <= 0:
+            return rgb_lin
+        # simple 3x3 box filter in linear space
+        k = torch.ones(1, 1, 3, 3, device=rgb_lin.device, dtype=rgb_lin.dtype) / 9.0
+        a = alpha.clamp(0, 1)
+        c = rgb_lin
+        for _ in range(iters):
+            ca = c * a
+            ca_blur = F.conv2d(ca, k, padding=1, groups=1)
+            a_blur  = F.conv2d(a,  k, padding=1, groups=1).clamp_min(1e-6)
+            c = torch.where((a > 0) & (a < 1), ca_blur / a_blur, c)
+        return c
+
+    # ---------- shape & range ----------
+    rgb = _ensure_nchw(rgb).float().clamp(0, 1)
+    bg  = _ensure_nchw(bg ).float().clamp(0, 1)
     sil = _ensure_nchw(sil).float()
-    if sil.shape[1] != 1:   # keep 1-channel alpha
+    if sil.shape[1] != 1:
         sil = sil[:, :1, ...]
-    if sil.max() > 1.5:     # 0/255 → 0/1
+    if sil.max() > 1.5:
         sil = sil / 255.0
 
     H, W = bg.shape[-2:]
     if rgb.shape[-2:] != (H, W):
         rgb = F.interpolate(rgb, size=(H, W), mode='bilinear', align_corners=False)
     if sil.shape[-2:] != (H, W):
-        sil = F.interpolate(sil, size=(H, W), mode='bilinear', align_corners=False).clamp(0,1)
+        sil = F.interpolate(sil, size=(H, W), mode='bilinear', align_corners=False).clamp(0, 1)
 
-    # stats (debug)
-    smin, sme, smax = sil.min().item(), sil.mean().item(), sil.max().item()
-    r_in  = rgb[sil.expand_as(rgb) > 0.5].mean().item() if (sil > 0.5).any() else float('nan')
-    #print(f"[composite] sil min/mean/max: {smin:.4f}/{sme:.4f}/{smax:.4f} | rgb_mean_inside: {r_in:.4f}")
+    # Optional: slightly harden the edge (helps tiny dark rims)
+    if harden_gamma is not None:
+        sil = sil.clamp(0, 1).pow(harden_gamma)
 
-    return sil * rgb + (1.0 - sil) * bg
+    # ---------- composite in LINEAR space with premultiplied alpha ----------
+    rgb_lin = srgb_to_linear(rgb)
+    bg_lin  = srgb_to_linear(bg)
+
+    # If FG wasn’t premultiplied inside the renderer, do it now
+    if not premultiplied:
+        rgb_lin = rgb_lin * sil
+
+    # Bleed FG colors into the soft edge to avoid black mixing
+    if bleed_iters and bleed_iters > 0:
+        rgb_lin = alpha_bleed(rgb_lin, sil, iters=bleed_iters)
+
+    out_lin = rgb_lin + bg_lin * (1.0 - sil)
+
+    if return_linear:
+        return out_lin.clamp(0, 1)
+    else:
+        return linear_to_srgb(out_lin.clamp(0, 1)).clamp(0, 1)
+
 
 @torch.no_grad()
 def overlay_mask_on_image(img, sil, color=(1,1,1), alpha=0.9, hard=False, outline_px=0, thr=0.5):
@@ -430,6 +488,20 @@ def pose_loss2(
     dice_val = torch.tensor(0., device=R_pred.device)
     edge_val = torch.tensor(0., device=R_pred.device)
 
+    # Ensure M_use is a single-channel binary mask in [0,1]
+    if M_use.shape[1] == 3:  # RGB → grayscale
+        # average or luminance; mean works fine for masks
+        M_use = M_use.mean(dim=1, keepdim=True)
+
+    # Clamp to [0,1] just in case and make binary
+    M_use = M_use.clamp(0, 1)
+    M_use = (M_use > 0.5).float()   # threshold at 0.5, adjust if needed
+
+    # Repeat the same for sil_hat if it has 3 channels
+    if sil_hat.shape[1] == 3:
+        sil_hat = sil_hat.mean(dim=1, keepdim=True).clamp(0,1)
+        sil_hat = (sil_hat > 0.5).float()
+
     has_fg = (M_use.sum(dim=(1,2,3)) > 10).float().view(-1,1,1,1)
     sil_eff = sil_hat * has_fg
     M_eff   = M_use   * has_fg
@@ -460,7 +532,8 @@ def pose_loss2(
         return loss, logs
 
     # ---- visuals (downsampled or upsample back) ----
-    I_comp  = composite(rgb_hat, BG_use, sil_eff)
+    #I_comp  = composite(rgb_hat, BG_use, sil_eff)
+    I_comp = composite(rgb_hat, BG_use, sil_eff, premultiplied=True, bleed_iters=1, harden_gamma=0.9)
     overlay = overlay_mask_on_image(BG_use, sil_eff, color=(0,1,0), alpha=0.6, outline_px=2)
 
     if mask_downsample > 1:

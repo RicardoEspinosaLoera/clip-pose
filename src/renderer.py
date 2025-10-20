@@ -338,9 +338,9 @@ class SoftMeshRenderer(torch.nn.Module):
         ambient        = 0.08
         kd             = 1.00
         ks             = 0.25
-        shininess      = 30.0
+        shininess      = 100.0
         wrap_k         = 0.20          # 0 = Lambert, 0.2–0.4 = softer
-        exposure_ev    = 1.00          # small lift in linear space
+        exposure_ev    = 5.00          # small lift in linear space
         wb_gain        = torch.tensor([1.06, 1.00, 0.94], device=device)  # warmer
 
         # PyVista framing quirk (affine on pixel coords, not shading)
