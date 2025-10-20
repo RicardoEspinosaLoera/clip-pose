@@ -20,20 +20,17 @@ def _ensure_nchw(x):
         raise ValueError(f"Expected NCHW, got {x.shape}")
     return x
 
-import torch
-import torch.nn.functional as F
-
 @torch.no_grad()
 def composite(
     rgb_srgb, bg_srgb, sil,
     *,
-    fg_is_premultiplied=False,   # set False if you adopt the renderer tweak below
-    bleed_iters=1,               # 0/1/2 – removes dark fringe
-    harden_gamma=None,           # e.g. 0.9; tighten edge a bit
-    dilate_iters=0,              # 0/1 – one-pixel dilation can kill the last rim
+    fg_is_premultiplied=True,   # your renderer premultiplies
+    bleed_iters=1,              # 0–2
+    harden_gamma=None,          # e.g. 0.9
+    dilate_iters=0,             # try 0 first; dilation can create rims if abused
     return_linear=False
 ):
-    def _ensure_nchw(x): return x if x.dim()==4 else x.unsqueeze(0)
+    def _nchw(x): return x if x.dim()==4 else x.unsqueeze(0)
 
     def srgb_to_linear(x):
         a = 0.055
@@ -51,56 +48,56 @@ def composite(
             out = (F.conv2d(out, k, padding=1) > 0).float()
         return out
 
-    def bleed_unpremultiplied(rgb_lin_un, a, iters=1):
-        # bleed *colors* (not premultiplied), then re-premultiply outside
-        if iters<=0: return rgb_lin_un
-        B,C,H,W = rgb_lin_un.shape
-        k = torch.ones(C,1,3,3, device=rgb_lin_un.device, dtype=rgb_lin_un.dtype)/9.0
-        # premultiply, blur, divide by blurred alpha → neighborhood color
-        ca      = rgb_lin_un * a
-        ca_blur = F.conv2d(ca, k, padding=1, groups=C)
-        a_blur  = F.conv2d(a,  torch.ones(1,1,3,3, device=a.device, dtype=a.dtype)/9.0,
-                           padding=1).clamp_min(1e-6)
+    def bleed_unpremul(rgb_un_lin, a, iters=1):
+        if iters<=0: return rgb_un_lin
+        B,C,H,W = rgb_un_lin.shape
+        kC = torch.ones(C,1,3,3, device=rgb_un_lin.device, dtype=rgb_un_lin.dtype)/9.
+        kA = torch.ones(1,1,3,3, device=a.device,        dtype=a.dtype)/9.
+        ca      = rgb_un_lin * a
+        ca_blur = F.conv2d(ca, kC, padding=1, groups=C)
+        a_blur  = F.conv2d(a,  kA, padding=1).clamp_min(1e-6)
         edge    = ((a>0) & (a<1)).expand(B,C,H,W)
-        rgb_lin_un = torch.where(edge, ca_blur/a_blur, rgb_lin_un)
-        return rgb_lin_un
+        return torch.where(edge, ca_blur/a_blur, rgb_un_lin)
 
-    # ----- shapes -----
-    rgb_srgb = _ensure_nchw(rgb_srgb).float().clamp(0,1).contiguous()
-    bg_srgb  = _ensure_nchw(bg_srgb ).float().clamp(0,1).contiguous()
-    sil      = _ensure_nchw(sil).float().contiguous()
-    if sil.shape[1] != 1: sil = sil[:, :1, ...]
-    if sil.max() > 1.5:   sil = sil / 255.0
+    # ---------- prepare ----------
+    rgb_srgb = _nchw(rgb_srgb).float().clamp(0,1).contiguous()
+    bg_srgb  = _nchw(bg_srgb ).float().clamp(0,1).contiguous()
+    sil      = _nchw(sil     ).float().contiguous()
+    if sil.shape[1]!=1: sil = sil[:, :1, ...]
+    if sil.max()>1.5:  sil = sil/255.
 
-    H, W = bg_srgb.shape[-2:]
-    if rgb_srgb.shape[-2:] != (H,W):
-        rgb_srgb = F.interpolate(rgb_srgb, size=(H,W), mode='bilinear', align_corners=False)
-    if sil.shape[-2:] != (H,W):
-        # IMPORTANT: nearest for masks to avoid gray halos from resampling
-        sil = F.interpolate(sil, size=(H,W), mode='nearest')
+    H,W = bg_srgb.shape[-2:]
+    if rgb_srgb.shape[-2:]!=(H,W):
+        rgb_srgb = F.interpolate(rgb_srgb, (H,W), mode='bilinear', align_corners=False)
+    if sil.shape[-2:]!=(H,W):
+        sil = F.interpolate(sil, (H,W), mode='nearest')        # masks: nearest!
 
-    # optional edge tweaks
-    if harden_gamma is not None:
-        sil = sil.clamp(0,1).pow(harden_gamma)
-    if dilate_iters > 0:
-        sil = dilate_alpha(sil, dilate_iters)
-
-    # ----- linear compositing -----
+    # ---------- convert to linear ----------
     fg_lin = srgb_to_linear(rgb_srgb)
     bg_lin = srgb_to_linear(bg_srgb)
 
+    # ---------- UN-premultiply if needed BEFORE editing alpha ----------
     if fg_is_premultiplied:
-        # un-premultiply → bleed → re-premultiply
-        fg_un = torch.where(sil>1e-6, fg_lin/sil, fg_lin)  # safe unpremultiply
-        if bleed_iters: fg_un = bleed_unpremultiplied(fg_un, sil, bleed_iters)
-        fg_lin = fg_un * sil
+        fg_un = torch.where(sil>1e-6, fg_lin/sil, fg_lin)      # safe unpremul
     else:
-        # not premultiplied: bleed on unpremultiplied, then premultiply
-        if bleed_iters: fg_lin = bleed_unpremultiplied(fg_lin, sil, bleed_iters) * sil
-        else:           fg_lin = fg_lin * sil
+        fg_un = fg_lin
 
-    out_lin = fg_lin + bg_lin * (1 - sil)
-    if return_linear: return out_lin.clamp(0,1)
+    # ---------- edit alpha (in the right order) ----------
+    if harden_gamma is not None:
+        sil = sil.clamp(0,1).pow(harden_gamma)
+    if dilate_iters>0:
+        sil = dilate_alpha(sil, dilate_iters)
+
+    # ---------- bleed colors on UN-premultiplied image ----------
+    if bleed_iters>0:
+        fg_un = bleed_unpremul(fg_un, sil, bleed_iters)
+
+    # ---------- re-premultiply with the *edited* alpha and composite ----------
+    fg_lin = fg_un * sil
+    out_lin = fg_lin + bg_lin * (1.0 - sil)
+
+    if return_linear:
+        return out_lin.clamp(0,1)
     return linear_to_srgb(out_lin.clamp(0,1)).clamp(0,1)
 
 
