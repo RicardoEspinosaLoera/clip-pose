@@ -530,7 +530,10 @@ def pose_loss2(
 
     # ---- visuals (downsampled or upsample back) ----
     #I_comp  = composite(rgb_hat, BG_use, sil_eff)
-    I_comp = composite(rgb_hat, BG_use, sil_eff, premultiplied=True, bleed_iters=1, harden_gamma=0.9)
+    #I_comp = composite(rgb_hat, BG_use, sil_eff, premultiplied=True, bleed_iters=1, harden_gamma=0.9)
+    I_comp = composite(rgb_hat, BG_use, sil_eff,
+                   fg_is_premultiplied=True,
+                   bleed_iters=1, harden_gamma=0.9, dilate_iters=1)
     overlay = overlay_mask_on_image(BG_use, sil_eff, color=(0,1,0), alpha=0.6, outline_px=2)
 
     if mask_downsample > 1:
