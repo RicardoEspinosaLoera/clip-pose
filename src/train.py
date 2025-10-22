@@ -7,7 +7,7 @@ from src.models_dinov3 import DinoV3Regressor
 from src.camera import sixd_to_rotmat
 from src.renderer import SoftMeshRenderer
 from src.losses import (
-    sample_mesh_points, pose_loss2
+    sample_mesh_points, pose_loss2, pose_loss_regression
 )
 import wandb
 import torchvision.transforms as T
