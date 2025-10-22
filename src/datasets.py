@@ -25,6 +25,17 @@ class TripletDataset(Dataset):
     def __len__(self):
         return len(self.items)
 
+    def resize_bilinear_np(self, img, size):
+        """
+        img: numpy array [H, W, C] or [H, W]
+        size: (Hs, Ws)
+        returns: resized array [Hs, Ws, C] or [Hs, Ws]
+        """
+        Hs, Ws = size
+        # cv2 uses (width, height) order
+        resized = cv2.resize(img, (Ws, Hs), interpolation=cv2.INTER_LINEAR)
+        return np.clip(resized, 0, 1)
+
     def rescale_K(self, K, old_H, old_W, new_H, new_W):
         if (new_H == old_H) and (new_W == old_W):
             return K
@@ -47,9 +58,9 @@ class TripletDataset(Dataset):
         H, W = I_np.shape[:2]
         Hs, Ws = int(H/2), int(W/2)
 
-        I_np  = F.interpolate(I_np.float(),  size=(Hs, Ws), mode='bilinear', align_corners=False).clamp(0,1) 
-        M_use  = F.interpolate(M_np.float(),  size=(Hs, Ws), mode='bilinear', align_corners=False).clamp(0,1) 
-        BG_use = F.interpolate(BG_np.float(), size=(Hs, Ws), mode='bilinear', align_corners=False).clamp(0,1) 
+        I_use  = resize_bilinear_np(I_np.transpose(1,2,0),  (Hs, Ws)).transpose(2,0,1)
+        M_use  = resize_bilinear_np(M_np.transpose(1,2,0),  (Hs, Ws)).transpose(2,0,1)
+        BG_use = resize_bilinear_np(BG_np.transpose(1,2,0), (Hs, Ws)).transpose(2,0,1)
 
         #H, W = I_np.shape[:2]
         #print(W, H)
