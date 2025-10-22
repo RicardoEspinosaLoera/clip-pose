@@ -5,6 +5,7 @@ import torch
 from torch.utils.data import Dataset
 from .camera import kaolin_cam_to_K, world_to_camera_from_vtk, quat_wxyz_to_R
 import numpy as np
+from PIL import Image
 
 def _to_uint8(img):
     """Ensure uint8 for PIL."""
@@ -28,15 +29,15 @@ def resize_bilinear_hwc(img, size):
 
     # Handle grayscale vs color
     if img.ndim == 2:  # (H,W) grayscale
-        im_pil = imageio.fromarray(_to_uint8(img))
-        im_res = im_pil.resize((Ws, Hs), resample=imageio.BILINEAR)
+        im_pil = Image.fromarray(_to_uint8(img))
+        im_res = im_pil.resize((Ws, Hs), resample=Image.BILINEAR)
         out = np.asarray(im_res)
         return np.clip(_from_uint8(out), 0.0, 1.0)
 
     elif img.ndim == 3:  # (H,W,C)
         # If C==4 (RGBA) it's fine; PIL will keep channels
-        im_pil = imageio.fromarray(_to_uint8(img))
-        im_res = im_pil.resize((Ws, Hs), resample=imageio.BILINEAR)
+        im_pil = Image.fromarray(_to_uint8(img))
+        im_res = im_pil.resize((Ws, Hs), resample=Image.BILINEAR)
         out = np.asarray(im_res)
         return np.clip(_from_uint8(out), 0.0, 1.0)
 
