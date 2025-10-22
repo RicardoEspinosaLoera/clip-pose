@@ -5,7 +5,7 @@ import torch
 from torch.utils.data import Dataset
 from .camera import kaolin_cam_to_K, world_to_camera_from_vtk, quat_wxyz_to_R
 import numpy as np
-import torch.nn.functional as F
+
 
 class TripletDataset(Dataset):
     """
