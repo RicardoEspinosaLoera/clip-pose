@@ -30,7 +30,7 @@ def scale_K(K, src_size, dst_size):
     sy = H2 / H
 
     K_out = K.copy()
-    if K_out.dim() == 2:  # [3,3]
+    if K_out.ndim == 2:  # [3,3]
         K_out[0,0] *= sx         # fx
         K_out[1,1] *= sy         # fy
         K_out[0,2] *= sx         # cx
