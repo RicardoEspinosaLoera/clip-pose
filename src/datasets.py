@@ -47,9 +47,9 @@ class TripletDataset(Dataset):
         H, W = I_np.shape[:2]
         Hs, Ws = int(H/2), int(W/2)
 
-        I_np  = F.interpolate(M.float(),  size=(Hs, Ws), mode='bilinear', align_corners=False).clamp(0,1) 
-        M_use  = F.interpolate(M.float(),  size=(Hs, Ws), mode='bilinear', align_corners=False).clamp(0,1) 
-        BG_use = F.interpolate(BG.float(), size=(Hs, Ws), mode='bilinear', align_corners=False).clamp(0,1) 
+        I_np  = F.interpolate(I_np.float(),  size=(Hs, Ws), mode='bilinear', align_corners=False).clamp(0,1) 
+        M_use  = F.interpolate(M_np.float(),  size=(Hs, Ws), mode='bilinear', align_corners=False).clamp(0,1) 
+        BG_use = F.interpolate(BG_np.float(), size=(Hs, Ws), mode='bilinear', align_corners=False).clamp(0,1) 
 
         #H, W = I_np.shape[:2]
         #print(W, H)
