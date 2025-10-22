@@ -24,6 +24,15 @@ class TripletDataset(Dataset):
     def __len__(self):
         return len(self.items)
 
+    def rescale_K(self, K, old_H, old_W, new_H, new_W):
+        if (new_H == old_H) and (new_W == old_W):
+            return K
+        K_ = K.clone().float()
+        sx, sy = new_W / float(old_W), new_H / float(old_H)
+        K_[:, 0, 0] *= sx;  K_[:, 1, 1] *= sy
+        K_[:, 0, 2] *= sx;  K_[:, 1, 2] *= sy
+        return K_
+
     def __getitem__(self, idx):
         jpath = self.items[idx]
         stem = os.path.splitext(jpath)[0]
@@ -35,6 +44,13 @@ class TripletDataset(Dataset):
         M_np  = imageio.imread(mpath)       # (H, W)
 
         H, W = I_np.shape[:2]
+        Hs, Ws = int(H/2), int(W/2)
+
+        I_np  = F.interpolate(M.float(),  size=(Hs, Ws), mode='bilinear', align_corners=False).clamp(0,1) if mask_downsample>1 else M.float()
+        M_use  = F.interpolate(M.float(),  size=(Hs, Ws), mode='bilinear', align_corners=False).clamp(0,1) if mask_downsample>1 else M.float()
+        BG_use = F.interpolate(BG.float(), size=(Hs, Ws), mode='bilinear', align_corners=False).clamp(0,1) if mask_downsample>1 else BG.float()
+
+        #H, W = I_np.shape[:2]
         #print(W, H)
 
         # --- Load metadata ---
@@ -57,6 +73,7 @@ class TripletDataset(Dataset):
             t_oc = torch.matmul(R_wc, t_ow) + t_wc      # [1,3]
 
             K = kaolin_cam_to_K(cam, image_size=(W, H))
+            K_use = scale_K(K, (H, W), (Hs, Ws))
 
 
         except Exception as e:
@@ -79,7 +96,7 @@ class TripletDataset(Dataset):
             'image': I_t,
             'bg': BG_t,
             'mask': M_t,
-            'K': torch.from_numpy(K).float(),
+            'K': torch.from_numpy(K_use).float(),
             'R_co': R_oc,
             't_co': t_oc,
             'stem': os.path.basename(stem),
