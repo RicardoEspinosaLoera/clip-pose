@@ -1,12 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
-try:
-    import timm
-except ImportError as e:
-    raise ImportError("Please `pip install timm` to use the DINOv3 backbone.") from e
-
+import timm
 
 class DinoV3Regressor(nn.Module):
     """
