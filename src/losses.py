@@ -436,8 +436,7 @@ def pose_loss2(
         K_use = K
         scaled = False
 
-    #rgb_hat, sil_hat = renderer(R_gt, t_gt, K, image_size=(H,W))
-    #with torch.no_grad():
+    #renderer kaolin
     rgb_hat, sil_hat = renderer(R_pred, t_pred, K_use, image_size=(Hs,Ws))
     
     sil_hat = sil_hat.float().clamp(0,1)  # (B,1,Hs,Ws)   
@@ -503,3 +502,32 @@ def pose_loss2(
 
 
     return loss, logs, I_comp, overlay, rgb_hat
+
+def pose_loss_regression(
+    R_pred, t_pred, R_gt, t_gt, D_obj,
+    λR: float = 0.5, λt: float = 0.5
+):
+    """
+    Regression-only pose loss: geodesic rotation + normalized translation.
+
+    Args:
+      R_pred, R_gt: [B,3,3] rotation matrices
+      t_pred, t_gt: [B,3] translations
+      D_obj:        [B] or scalar (object diameter or scale for normalization)
+      λR, λt:       weights for rotation/translation terms
+
+    Returns:
+      loss: scalar
+      logs: dict with detached metrics
+    """
+    # base pose losses
+    L_R = rot_geodesic_loss(R_pred, R_gt)        # radians (mean over batch)
+    L_T = normalized_t_loss(t_pred, t_gt, D_obj) # unitless (mean over batch)
+
+    loss = λR * L_R + λt * L_T
+
+    logs = {
+        'rot_rad': L_R.detach(),
+        'trans_n': L_T.detach(),
+    }
+    return loss, logs
