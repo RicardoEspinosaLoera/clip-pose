@@ -3,6 +3,7 @@ import numpy as np
 from torch.utils.data import DataLoader
 from src.datasets import TripletDataset
 from src.models import Regressor
+from src.models_dinov3 import DinoV3Regressor
 from src.camera import sixd_to_rotmat
 from src.renderer import SoftMeshRenderer
 from src.losses import (
@@ -271,7 +272,8 @@ def main(cfg_path='config.yaml'):
     P_obj = sample_mesh_points(verts, faces, n=cfg.get('eval', {}).get('add_points', 1500)).to(device)
 
     # ---- model/optim ----
-    model = Regressor().to(device)
+    #model = Regressor().to(device)
+    model = DinoV3Regressor(pretrained=True, freeze_backbone=False).to(device)
     opt = torch.optim.AdamW(model.parameters(),
                             lr=cfg['optim']['lr'],
                             weight_decay=cfg['optim']['weight_decay'])

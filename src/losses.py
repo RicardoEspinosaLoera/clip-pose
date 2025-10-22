@@ -97,7 +97,6 @@ def overlay_mask_on_image(img, sil, color=(1,1,1), alpha=0.9, hard=False, outlin
     return img * (1.0 - a) + color_t * a
 
 
-#_DELTA = None  # {'R':(3,3), 't':(3,), 's':float}
 
 @torch.no_grad()
 def _downsize_hw(H, W, max_side=128, min_side=48):
