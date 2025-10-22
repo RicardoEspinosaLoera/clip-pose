@@ -58,9 +58,9 @@ class TripletDataset(Dataset):
         H, W = I_np.shape[:2]
         Hs, Ws = int(H/2), int(W/2)
 
-        I_use  = resize_bilinear_np(I_np.transpose(1,2,0),  (Hs, Ws)).transpose(2,0,1)
-        M_use  = resize_bilinear_np(M_np.transpose(1,2,0),  (Hs, Ws)).transpose(2,0,1)
-        BG_use = resize_bilinear_np(BG_np.transpose(1,2,0), (Hs, Ws)).transpose(2,0,1)
+        I_use  = self.resize_bilinear_np(I_np.transpose(1,2,0),  (Hs, Ws)).transpose(2,0,1)
+        M_use  = self.resize_bilinear_np(M_np.transpose(1,2,0),  (Hs, Ws)).transpose(2,0,1)
+        BG_use = self.resize_bilinear_np(BG_np.transpose(1,2,0), (Hs, Ws)).transpose(2,0,1)
 
         #H, W = I_np.shape[:2]
         #print(W, H)
