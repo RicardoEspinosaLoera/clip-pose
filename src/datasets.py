@@ -5,8 +5,43 @@ import torch
 from torch.utils.data import Dataset
 from .camera import kaolin_cam_to_K, world_to_camera_from_vtk, quat_wxyz_to_R
 import numpy as np
-import cv2
 
+def _to_uint8(img):
+    """Ensure uint8 for PIL."""
+    if img.dtype == np.uint8:
+        return img
+    # assume img is float in [0,1] (or similar); scale + clamp
+    img = np.clip(img, 0, 1)
+    return (img * 255.0 + 0.5).astype(np.uint8)
+
+def _from_uint8(img_u8):
+    """Return float32 in [0,1]."""
+    return (img_u8.astype(np.float32)) / 255.0
+
+def resize_bilinear_hwc(img, size):
+    """
+    img: np.ndarray with shape (H,W,C) or (H,W)
+    size: (Hs, Ws)
+    returns: float32 array in [0,1], same channel count as input
+    """
+    Hs, Ws = size
+
+    # Handle grayscale vs color
+    if img.ndim == 2:  # (H,W) grayscale
+        im_pil = Image.fromarray(_to_uint8(img))
+        im_res = im_pil.resize((Ws, Hs), resample=Image.BILINEAR)
+        out = np.asarray(im_res)
+        return np.clip(_from_uint8(out), 0.0, 1.0)
+
+    elif img.ndim == 3:  # (H,W,C)
+        # If C==4 (RGBA) it's fine; PIL will keep channels
+        im_pil = Image.fromarray(_to_uint8(img))
+        im_res = im_pil.resize((Ws, Hs), resample=Image.BILINEAR)
+        out = np.asarray(im_res)
+        return np.clip(_from_uint8(out), 0.0, 1.0)
+
+    else:
+        raise ValueError(f"Unsupported image shape {img.shape}; expected (H,W) or (H,W,C).")
 
 class TripletDataset(Dataset):
     """
@@ -25,17 +60,6 @@ class TripletDataset(Dataset):
 
     def __len__(self):
         return len(self.items)
-
-    def resize_bilinear_np(self, img, size):
-        """
-        img: numpy array [H, W, C] or [H, W]
-        size: (Hs, Ws)
-        returns: resized array [Hs, Ws, C] or [Hs, Ws]
-        """
-        Hs, Ws = size
-        # cv2 uses (width, height) order
-        resized = cv2.resize(img, (Ws, Hs), interpolation=cv2.INTER_LINEAR)
-        return np.clip(resized, 0, 1)
 
     def rescale_K(self, K, old_H, old_W, new_H, new_W):
         if (new_H == old_H) and (new_W == old_W):
@@ -59,9 +83,9 @@ class TripletDataset(Dataset):
         H, W = I_np.shape[:2]
         Hs, Ws = int(H/2), int(W/2)
 
-        I_use  = self.resize_bilinear_np(I_np.transpose(1,2,0),  (Hs, Ws)).transpose(2,0,1)
-        M_use  = self.resize_bilinear_np(M_np.transpose(1,2,0),  (Hs, Ws)).transpose(2,0,1)
-        BG_use = self.resize_bilinear_np(BG_np.transpose(1,2,0), (Hs, Ws)).transpose(2,0,1)
+        I_use  = resize_bilinear_hwc(I_np,  (Hs, Ws))   # -> (Hs,Ws,3) float32 [0,1]
+        BG_use = resize_bilinear_hwc(BG_np, (Hs, Ws))   # -> (Hs,Ws,3) float32 [0,1]
+        M_use  = resize_bilinear_hwc(M_np,  (Hs, Ws))   # -> (Hs,Ws)   float32 [0,1]
 
         #H, W = I_np.shape[:2]
         #print(W, H)
