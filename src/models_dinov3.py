@@ -1,13 +1,13 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import timm
+
 
 class DinoV3Regressor(nn.Module):
     """
-    DINOv3-based regressor.
-    - Uses timm to load a DINOv3 ViT backbone.
-    - Global pooled features -> small MLP neck -> rot(6D), t(3)
+    DINOv3-based regressor with partial unfreezing:
+      - Freeze entire ViT backbone
+      - Unfreeze last `unfreeze_last_blocks` transformer blocks + final norm
     """
     def __init__(
         self,
@@ -15,55 +15,78 @@ class DinoV3Regressor(nn.Module):
         pretrained: bool = True,
         neck_hidden: int = 512,
         dropout: float = 0.1,
-        freeze_backbone: bool = False,
+        # --- freezing controls ---
+        freeze_backbone: bool = False,       # if True: freeze everything (no partial unfreeze)
+        unfreeze_last_blocks: int = 1,       # ignored if freeze_backbone=True
+        unfreeze_final_norm: bool = True,    # usually True
     ):
         super().__init__()
 
-        # Build DINOv3 backbone; num_classes=0 + global_pool='avg' => returns pooled features (B, C)
+        # 1) Backbone (global pooled features)
         self.backbone = timm.create_model(
             model_name,
             pretrained=pretrained,
             num_classes=0,
             global_pool="avg",
         )
-        feat_dim = getattr(self.backbone, "num_features", None)
+        feat_dim = getattr(self.backbone, "num_features", None) or getattr(self.backbone, "embed_dim", None)
         if feat_dim is None:
-            # Fallback: many timm ViTs expose embed_dim
-            feat_dim = getattr(self.backbone, "embed_dim", None)
-        if feat_dim is None:
-            raise RuntimeError("Could not infer DINOv3 feature dimension from backbone.")
+            raise RuntimeError("Could not infer DINOv3 feature dim (num_features/embed_dim).")
 
-        if freeze_backbone:
-            for p in self.backbone.parameters():
-                p.requires_grad = False
+        # 2) Freeze policy
+        self._apply_freeze_policy(freeze_backbone, unfreeze_last_blocks, unfreeze_final_norm)
 
+        # 3) Neck + Heads
         self.neck = nn.Sequential(
             nn.Linear(feat_dim, neck_hidden),
             nn.LayerNorm(neck_hidden),
             nn.SiLU(),
             nn.Dropout(dropout),
         )
+        self.head_rot = nn.Linear(neck_hidden, 6)   # 6D rotation
+        self.head_t   = nn.Linear(neck_hidden, 3)   # tx, ty, log(z/D)
 
-        # Heads
-        self.head_rot = nn.Linear(neck_hidden, 6)  # 6D rotation
-        self.head_t   = nn.Linear(neck_hidden, 3)  # tx, ty, log(z/D) normalized
+    # ---- freeze helpers ------------------------------------------------------
+    def _freeze_all(self):
+        for p in self.backbone.parameters():
+            p.requires_grad = False
 
+    def _unfreeze_last_k_blocks(self, k: int, unfreeze_final_norm: bool):
+        """
+        Assumes a timm ViT with .blocks: ModuleList of transformer blocks, and .norm final layer.
+        """
+        if not hasattr(self.backbone, "blocks"):
+            # Fallback: if model has no .blocks, skip (some conv backbones)
+            return
+        blocks = self.backbone.blocks
+        k = max(0, min(k, len(blocks)))
+        for i in range(len(blocks) - k, len(blocks)):
+            for p in blocks[i].parameters():
+                p.requires_grad = True
+
+        if unfreeze_final_norm and hasattr(self.backbone, "norm"):
+            for p in self.backbone.norm.parameters():
+                p.requires_grad = True
+
+    def _apply_freeze_policy(self, freeze_backbone: bool, unfreeze_last_blocks: int, unfreeze_final_norm: bool):
+        # start by freezing everything
+        self._freeze_all()
+
+        if not freeze_backbone:
+            # then unfreeze last K transformer blocks (+ final norm)
+            self._unfreeze_last_k_blocks(unfreeze_last_blocks, unfreeze_final_norm)
+
+    # -------------------------------------------------------------------------
     def forward(self, x, D_obj=None):
-        """
-        x: (B,3,H,W) preprocessed to match the DINOv3 backbone's expected input.
-           (Use timm's transform config at training time.)
-        D_obj: scalar or (B,) object diameter/range for de-normalizing t if provided.
-        """
         f = self.backbone(x)          # (B, C)
         f = self.neck(f)              # (B, H)
 
-        r6 = self.head_rot(f)         # (B, 6)
-        t3 = self.head_t(f)           # (B, 3)
+        r6 = self.head_rot(f)
+        t3 = self.head_t(f)
 
         txn, tyn, logzn = t3[..., 0], t3[..., 1], t3[..., 2]
-        # Positive, stable depth (softplus safer than exp)
-        zn = F.softplus(logzn).clamp_min(1e-6)   # > 0
-        t_norm = torch.stack([txn, tyn, zn], dim=-1)  # (B, 3)
+        zn = F.softplus(logzn).clamp_min(1e-6)      # positive, stable depth
+        t_norm = torch.stack([txn, tyn, zn], dim=-1)
 
         if D_obj is None:
             return r6, t_norm
@@ -74,9 +97,9 @@ class DinoV3Regressor(nn.Module):
 
             B = x.shape[0]
             if D_obj.dim() == 0:
-                D_obj = D_obj.expand(B)      # scalar -> (B,)
+                D_obj = D_obj.expand(B)
             elif D_obj.dim() == 1 and D_obj.shape[0] != B:
                 D_obj = D_obj.reshape(1).expand(B)
 
-            t = t_norm * D_obj.view(-1, 1)   # meters
+            t = t_norm * D_obj.view(-1, 1)
             return r6, t
