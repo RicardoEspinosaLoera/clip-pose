@@ -37,7 +37,6 @@ class DinoV3Regressor(nn.Module):
             for p in self.backbone.parameters():
                 p.requires_grad = False
 
-        # Neck: small MLP head (same spirit as your ResNet version)
         self.neck = nn.Sequential(
             nn.Linear(feat_dim, neck_hidden),
             nn.LayerNorm(neck_hidden),

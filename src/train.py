@@ -275,6 +275,11 @@ def main(cfg_path='config.yaml'):
     # ---- model/optim ----
     #model = Regressor().to(device)
     model = DinoV3Regressor(pretrained=True, freeze_backbone=False).to(device)
+    # Add this line:
+    if torch.cuda.device_count() > 1:
+        print(f"Using {torch.cuda.device_count()} GPUs via DataParallel")
+        model = torch.nn.DataParallel(model)
+        
     opt = torch.optim.AdamW(model.parameters(),
                             lr=cfg['optim']['lr'],
                             weight_decay=cfg['optim']['weight_decay'])
