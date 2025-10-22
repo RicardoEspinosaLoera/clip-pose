@@ -24,13 +24,12 @@ def scale_K(K, src_size, dst_size):
     Scale camera intrinsics from src_size (H,W) to dst_size (H2,W2).
     Works with batched K: [B,3,3] or unbatched [3,3].
     """
-    import torch
     H, W   = src_size
     H2, W2 = dst_size
     sx = W2 / W
     sy = H2 / H
 
-    K_out = K.clone()
+    K_out = K.copy()
     if K_out.dim() == 2:  # [3,3]
         K_out[0,0] *= sx         # fx
         K_out[1,1] *= sy         # fy
