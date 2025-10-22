@@ -19,6 +19,32 @@ def _from_uint8(img_u8):
     """Return float32 in [0,1]."""
     return (img_u8.astype(np.float32)) / 255.0
 
+def scale_K(K, src_size, dst_size):
+    """
+    Scale camera intrinsics from src_size (H,W) to dst_size (H2,W2).
+    Works with batched K: [B,3,3] or unbatched [3,3].
+    """
+    import torch
+    H, W   = src_size
+    H2, W2 = dst_size
+    sx = W2 / W
+    sy = H2 / H
+
+    K_out = K.clone()
+    if K_out.dim() == 2:  # [3,3]
+        K_out[0,0] *= sx         # fx
+        K_out[1,1] *= sy         # fy
+        K_out[0,2] *= sx         # cx
+        K_out[1,2] *= sy         # cy
+        K_out[0,1] *= sx         # skew (usually 0), u scales with width
+    else:                 # [B,3,3]
+        K_out[:,0,0] *= sx
+        K_out[:,1,1] *= sy
+        K_out[:,0,2] *= sx
+        K_out[:,1,2] *= sy
+        K_out[:,0,1] *= sx
+    return K_out
+
 def resize_bilinear_hwc(img, size):
     """
     img: np.ndarray with shape (H,W,C) or (H,W)
@@ -44,6 +70,7 @@ def resize_bilinear_hwc(img, size):
     else:
         raise ValueError(f"Unsupported image shape {img.shape}; expected (H,W) or (H,W,C).")
 
+
 class TripletDataset(Dataset):
     """
     Dataset loader for Kaolin-style ground truth:
@@ -62,14 +89,6 @@ class TripletDataset(Dataset):
     def __len__(self):
         return len(self.items)
 
-    def rescale_K(self, K, old_H, old_W, new_H, new_W):
-        if (new_H == old_H) and (new_W == old_W):
-            return K
-        K_ = K.clone().float()
-        sx, sy = new_W / float(old_W), new_H / float(old_H)
-        K_[:, 0, 0] *= sx;  K_[:, 1, 1] *= sy
-        K_[:, 0, 2] *= sx;  K_[:, 1, 2] *= sy
-        return K_
 
     def __getitem__(self, idx):
         jpath = self.items[idx]
