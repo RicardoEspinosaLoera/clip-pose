@@ -235,6 +235,38 @@ def set_seed(s=42):
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(s)
 
+def save_checkpoint(model, optimizer, epoch, out_dir, name="checkpoint", extra=None):
+    """
+    Saves model and optimizer state safely (works with DataParallel).
+    Args:
+        model: torch.nn.Module (possibly DataParallel)
+        optimizer: torch.optim.Optimizer or None
+        epoch: int, current epoch
+        out_dir: str, directory to save checkpoint
+        name: str, filename prefix (e.g. 'best', 'epoch10')
+        extra: dict, optional extra info to store (e.g. metrics)
+    """
+    os.makedirs(out_dir, exist_ok=True)
+
+    # Handle DataParallel models
+    if isinstance(model, torch.nn.DataParallel):
+        model_state = model.module.state_dict()
+    else:
+        model_state = model.state_dict()
+
+    ckpt = {
+        "epoch": epoch,
+        "model_state": model_state,
+        "optimizer_state": optimizer.state_dict() if optimizer is not None else None,
+        "extra": extra or {}
+    }
+
+    ckpt_path = os.path.join(out_dir, f"{name}.pth")
+    torch.save(ckpt, ckpt_path)
+    print(f"✅ Saved checkpoint: {ckpt_path}")
+    return ckpt_path
+
+
 def main(cfg_path='config.yaml'):
     cfg = yaml.safe_load(open(cfg_path))
     set_seed(cfg.get('seed', 42))
@@ -273,6 +305,7 @@ def main(cfg_path='config.yaml'):
     P_obj = sample_mesh_points(verts, faces, n=cfg.get('eval', {}).get('add_points', 1500)).to(device)
 
     # ---- model/optim ----
+    ename = "RestNet18"
     model = Regressor().to(device)
     # Unfreeze ONLY the last transformer block + final norm (default):
     #model = DinoV3Regressor(unfreeze_last_blocks=1, freeze_backbone=False).to(device)
@@ -320,12 +353,11 @@ def main(cfg_path='config.yaml'):
                 log_dict["global_step"] = global_step
                 wandb.log(log_dict, step=global_step)
 
-            # checkpoint (works even if ADDn isn't present)
             if val_stats:
                 score = val_stats.get(best_key, val_stats.get('loss', float('inf')))
                 if score < best_val:
                     best_val = score
-                    ckpt_path = os.path.join(cfg['train_io']['out_dir'], f"best_epoch{epoch:03d}.pth")
+                    ckpt_path = os.path.join(os.path.join(cfg['train_io']['out_dir'],ename), f"best_epoch{epoch:03d}.pth")
                     torch.save(model.state_dict(), ckpt_path)
 
     finally:
