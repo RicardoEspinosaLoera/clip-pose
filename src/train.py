@@ -273,10 +273,9 @@ def main(cfg_path='config.yaml'):
     P_obj = sample_mesh_points(verts, faces, n=cfg.get('eval', {}).get('add_points', 1500)).to(device)
 
     # ---- model/optim ----
-    #model = Regressor().to(device)
-    #model = DinoV3Regressor(pretrained=True, freeze_backbone=False).to(device)
+    model = Regressor().to(device)
     # Unfreeze ONLY the last transformer block + final norm (default):
-    model = DinoV3Regressor(unfreeze_last_blocks=1, freeze_backbone=False).to(device)
+    #model = DinoV3Regressor(unfreeze_last_blocks=1, freeze_backbone=False).to(device)
     # Add this line:
     if torch.cuda.device_count() > 1:
         print(f"Using {torch.cuda.device_count()} GPUs via DataParallel")
