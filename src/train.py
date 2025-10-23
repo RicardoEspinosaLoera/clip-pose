@@ -272,7 +272,8 @@ def main(cfg_path='config.yaml'):
     set_seed(cfg.get('seed', 42))
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    os.makedirs(cfg['train_io']['out_dir'], exist_ok=True)
+    ename = "RestNet18"
+    os.makedirs(os.path.join(cfg['train_io']['out_dir'],ename), exist_ok=True)
 
     # ---- wandb ----
     wandb.init(project=cfg['wandb']['project'],
@@ -305,7 +306,8 @@ def main(cfg_path='config.yaml'):
     P_obj = sample_mesh_points(verts, faces, n=cfg.get('eval', {}).get('add_points', 1500)).to(device)
 
     # ---- model/optim ----
-    ename = "RestNet18"
+   
+
     model = Regressor().to(device)
     # Unfreeze ONLY the last transformer block + final norm (default):
     #model = DinoV3Regressor(unfreeze_last_blocks=1, freeze_backbone=False).to(device)
