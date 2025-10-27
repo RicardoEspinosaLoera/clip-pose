@@ -170,9 +170,9 @@ def run_epoch(model, renderer, loader, device, cfg, P_obj, D_obj, verts, mode,
         H, W = I.shape[-2], I.shape[-1]
         
         # Loss to render
-        #loss, logs, I_comp, overlay, rgb = pose_loss2(R_pred, t_pred, R_gt, t_gt, D_batch, M, K, (H, W), renderer,BG, λR=0.5, λt=0.5, λmask=1.0, λbce=1.0, λdice=0.5, λedge=0.1, mask_downsample=2)
+        loss, logs, I_comp, overlay, rgb = pose_loss2(R_pred, t_pred, R_gt, t_gt, D_batch, M, K, (H, W), renderer,BG, λR=0.5, λt=0.5, λmask=1.0, λbce=1.0, λdice=0.5, λedge=0.1, mask_downsample=2)
         # Loss to normal regresor
-        loss, logs = pose_loss_regression(R_pred, t_pred, R_gt, t_gt, D_batch, λR=λR, λt=λt)
+        #loss, logs = pose_loss_regression(R_pred, t_pred, R_gt, t_gt, D_batch, λR=λR, λt=λt)
 
         if is_train:
             optimizer.zero_grad(set_to_none=True)
@@ -212,8 +212,8 @@ def run_epoch(model, renderer, loader, device, cfg, P_obj, D_obj, verts, mode,
                 f"{mode}/Tn": batch_Tn,
                 f"{mode}/Tn": batch_Tn,
             })
-            # save_or_log_overlay(I, I_comp, overlay,rgb, M, os.path.join(cfg['train_io']['out_dir'], 'val_vis'), 'val', step,
-            #                         to_wandb=(wandb is not None and cfg['wandb']['enabled']))
+            save_or_log_overlay(I, I_comp, overlay,rgb, M, os.path.join(cfg['train_io']['out_dir'], 'val_vis'), 'val', step,
+                                    to_wandb=(wandb is not None and cfg['wandb']['enabled']))
 
     # ---- epoch averages ----
     avg = {
@@ -267,7 +267,7 @@ def main(cfg_path='config.yaml'):
     set_seed(cfg.get('seed', 42))
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    ename = "Resnet18"
+    ename = "Resnet18-rendering"
     os.makedirs(os.path.join(cfg['train_io']['out_dir'],ename), exist_ok=True)
 
     # ---- wandb ----
