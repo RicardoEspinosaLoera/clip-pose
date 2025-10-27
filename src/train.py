@@ -3,7 +3,7 @@ import numpy as np
 from torch.utils.data import DataLoader
 from src.datasets import TripletDataset
 from src.models import Regressor
-from src.models_dinov3 import DinoV3Regressor
+from src.models_dinov3 import DinoV3RegressorLoRA
 from src.camera import sixd_to_rotmat
 from src.renderer import SoftMeshRenderer
 from src.losses import (
@@ -319,7 +319,7 @@ def main(cfg_path='config.yaml'):
         lora_last_blocks=6,            # adapters on last 6 blocks
         unfreeze_last_blocks=0,        # keep 0 if you want LoRA-only first
     ).to(device)
-    
+
     # Add this line:
     if torch.cuda.device_count() > 1:
         print(f"Using {torch.cuda.device_count()} GPUs via DataParallel")
