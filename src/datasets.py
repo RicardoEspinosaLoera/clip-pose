@@ -128,8 +128,8 @@ class TripletDataset(Dataset):
             R_oc = torch.matmul(R_wc, R_ow)                        # [1,3,3]
             t_oc = torch.matmul(R_wc, t_ow) + t_wc      # [1,3]
 
-            K = kaolin_cam_to_K(cam, image_size=(W, H))
-            K_use = scale_K(K, (H, W), (Hs, Ws))
+            K_use = kaolin_cam_to_K(cam, image_size=(W, H))
+            #K_use = scale_K(K, (H, W), (Hs, Ws))
 
 
         except Exception as e:
