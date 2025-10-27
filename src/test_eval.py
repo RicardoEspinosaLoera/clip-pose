@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader
 # --- your codebase imports ---
 from src.datasets import TripletDataset            # <-- uses your dataset exactly as given
 from src.models import Regressor
-from src.models_dinov3 import DinoV3Regressor, DinoV3RegressorLoRA
+from src.models_dinov3 import DinoV3RegressorLoRA
 from src.camera import sixd_to_rotmat
 from src.losses import sample_mesh_points
 
