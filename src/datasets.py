@@ -129,7 +129,7 @@ class TripletDataset(Dataset):
             t_oc = torch.matmul(R_wc, t_ow) + t_wc      # [1,3]
 
             K_use = kaolin_cam_to_K(cam, image_size=(W, H))
-            #K_use = scale_K(K, (H, W), (Hs, Ws))
+            K_use = scale_K(K, (H, W), (Hs, Ws))
 
 
         except Exception as e:
@@ -149,9 +149,9 @@ class TripletDataset(Dataset):
 
         # --- Pack final sample ---
         sample = {
-            'image': I_t,
-            'bg': BG_t,
-            'mask': M_t,
+            'image': I_use,
+            'bg': BG_use,
+            'mask': M_use,
             'K': torch.from_numpy(K_use).float(),
             'R_co': R_oc,
             't_co': t_oc,

@@ -124,13 +124,10 @@ class SoftMeshRenderer(torch.nn.Module):
         #Normal affine vaues
         sx, sy, tx, ty = (0.68, 1.0, 128.34, -0.5)
 
-        #BASE_W, BASE_H = 800, 544
+        BASE_W, BASE_H = 800, 544
 
-        #tx = tx * (W / BASE_W)
-        #ty = ty * (H / BASE_H)
-
-        # W/ 2 and H/2 to center, then scale to fill
-        #sx, sy, tx, ty = (0.34, 0.5, 64.17, -0.25)
+        tx = tx * (W / BASE_W)
+        ty = ty * (H / BASE_H)
         
         u_pix = u_pix * sx + tx
         v_pix = v_pix * sy + ty
