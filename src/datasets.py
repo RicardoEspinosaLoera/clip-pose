@@ -140,11 +140,11 @@ class TripletDataset(Dataset):
             raise RuntimeError(f"[{os.path.basename(jpath)}] compose_camera_object failed: {e}")
 
         # --- To tensors ---
-        I_t  = torch.from_numpy(I_np).permute(2, 0, 1).float() / 255.0
-        BG_t = torch.from_numpy(BG_np).permute(2, 0, 1).float() / 255.0
+        I_use  = torch.from_numpy(I_use).permute(2, 0, 1).float() / 255.0
+        BG_use = torch.from_numpy(BG_use).permute(2, 0, 1).float() / 255.0
         if M_np.ndim == 3:
             M_np = M_np[..., 0]
-        M_t = torch.from_numpy((M_np > 0).astype('float32')).unsqueeze(0)
+        M_use = torch.from_numpy((M_use > 0).astype('float32')).unsqueeze(0)
 
         # --- Optional augmentations ---
         if self.train and self.transform is not None:
