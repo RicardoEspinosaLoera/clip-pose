@@ -148,8 +148,8 @@ class TripletDataset(Dataset):
 
         # --- Optional augmentations ---
         if self.train and self.transform is not None:
-            I_t = self.transform(I_t)
-            BG_t = self.transform(BG_t)
+            I_use = self.transform(I_use)
+            BG_use = self.transform(BG_use)
 
         # --- Pack final sample ---
         sample = {
