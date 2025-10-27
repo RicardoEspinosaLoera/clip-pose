@@ -162,21 +162,16 @@ def run_epoch(model, renderer, loader, device, cfg, P_obj, D_obj, verts, mode,
         BG = batch['bg'].to(device)
         K  = batch['K'].to(device)
         M  = batch['mask'].to(device)
-        #cam  = batch['cam']
-
-        #print("R, t",R_gt,t_gt)
 
         B = I.size(0)
         D_batch = torch.as_tensor(D_obj, device=device, dtype=I.dtype).expand(B)  # (B,)
         r6, t_pred = model(I, D_obj=D_batch)
         R_pred = sixd_to_rotmat(r6)
-        #R_pred = project_to_so3(R_pred) 
-        #R_gt = sixd_to_rotmat(R_gt)
-        #R_gt = project_to_so3(R_gt)
         H, W = I.shape[-2], I.shape[-1]
-        #print("######",W,H)
         
+        # Loss to render
         #loss, logs, I_comp, overlay, rgb = pose_loss2(R_pred, t_pred, R_gt, t_gt, D_batch, M, K, (H, W), renderer,BG, λR=0.5, λt=0.5, λmask=1.0, λbce=1.0, λdice=0.5, λedge=0.1, mask_downsample=2)
+        # Loss to normal regresor
         loss, logs = pose_loss_regression(R_pred, t_pred, R_gt, t_gt, D_batch, λR=λR, λt=λt)
 
         if is_train:
@@ -272,7 +267,7 @@ def main(cfg_path='config.yaml'):
     set_seed(cfg.get('seed', 42))
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    ename = "RestNet18"
+    ename = "Dinov3_LoRA"
     os.makedirs(os.path.join(cfg['train_io']['out_dir'],ename), exist_ok=True)
 
     # ---- wandb ----
