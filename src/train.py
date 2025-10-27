@@ -267,7 +267,7 @@ def main(cfg_path='config.yaml'):
     set_seed(cfg.get('seed', 42))
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    ename = "Dinov3_LoRA"
+    ename = "Resnet18"
     os.makedirs(os.path.join(cfg['train_io']['out_dir'],ename), exist_ok=True)
 
     # ---- wandb ----
