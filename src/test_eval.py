@@ -221,7 +221,7 @@ def load_model(arch: str, ckpt: str, device: str):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data_root", required=True, help="Folder containing *.json GT files")
-    ap.add_argument("--mesh", required=True, help="Path to mesh (OBJ/PLY)", default="../meshes/Item.obj")
+    ap.add_argument("--mesh", required=False, help="Path to mesh (OBJ/PLY)", default="../meshes/Item.obj")
     ap.add_argument("--ckpt", required=True, help="Path to model weights (.pth)")
     ap.add_argument("--arch", default="regressor", choices=["regressor","dinov3"])
     ap.add_argument("--batch_size", type=int, default=8)
