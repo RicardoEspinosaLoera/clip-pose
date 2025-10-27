@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
-import os, json, glob, argparse, math
+import os, json, argparse, math
 import numpy as np
 from typing import Dict, Any, Tuple, List
 
 import torch
 import torch.nn.functional as F
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import DataLoader
 
+# --- your codebase imports ---
+from src.datasets import TripletDataset            # <-- uses your dataset exactly as given
 from src.models import Regressor
-from src.models_dinov3 import DinoV3RegressorLoRA
+from src.models_dinov3 import DinoV3Regressor, DinoV3RegressorLoRA
 from src.camera import sixd_to_rotmat
 from src.losses import sample_mesh_points
 
@@ -16,32 +18,8 @@ import trimesh
 
 
 # ------------------------------
-# Utilities
+# Utils
 # ------------------------------
-def scale_K(K: np.ndarray, from_size: Tuple[int,int], to_size: Tuple[int,int]) -> np.ndarray:
-    """Scale intrinsics K when resizing from (H,W) -> (Hs,Ws)."""
-    H, W = from_size
-    Hs, Ws = to_size
-    sy = Hs / float(H)
-    sx = Ws / float(W)
-    K_scaled = K.copy()
-    K_scaled[0, 0] *= sx  # fx
-    K_scaled[1, 1] *= sy  # fy
-    K_scaled[0, 2] *= sx  # cx
-    K_scaled[1, 2] *= sy  # cy
-    return K_scaled
-
-def to_chw_float01(img: np.ndarray) -> torch.Tensor:
-    """HWC uint8/float -> CHW float32 [0,1]."""
-    if img.dtype != np.float32:
-        img = img.astype(np.float32)
-    if img.max() > 1.0:
-        img = img / 255.0
-    return torch.from_numpy(img).permute(2,0,1).contiguous()
-
-def resize_chw(img_chw: torch.Tensor, out_hw: Tuple[int,int]) -> torch.Tensor:
-    """CHW float[0,1] -> CHW resized using bilinear."""
-    return F.interpolate(img_chw.unsqueeze(0), size=out_hw, mode='bilinear', align_corners=False).squeeze(0)
 
 def set_seed(s=42):
     import random
@@ -62,55 +40,6 @@ def load_mesh(path: str):
     return V, F
 
 
-def quat_wxyz_to_R(q: List[float]) -> np.ndarray:
-    """Quaternion [w,x,y,z] → 3x3 rotation."""
-    w, x, y, z = q
-    return np.array([
-        [1 - 2*(y*y + z*z),     2*(x*y - z*w),       2*(x*z + y*w)],
-        [2*(x*y + z*w),         1 - 2*(x*x + z*z),   2*(y*z - x*w)],
-        [2*(x*z - y*w),         2*(y*z + x*w),       1 - 2*(x*x + y*y)]
-    ], dtype=np.float32)
-
-
-def parse_intrinsics(d: Dict[str, Any]) -> np.ndarray:
-    """
-    Accepts:
-      - 'K': 3x3
-      - or {fx, fy, cx, cy}
-    Returns K (3x3).
-    """
-    if "K" in d and d["K"] is not None:
-        K = np.array(d["K"], dtype=np.float32).reshape(3, 3)
-    else:
-        fx = float(d.get("fx"))
-        fy = float(d.get("fy", fx))
-        cx = float(d.get("cx"))
-        cy = float(d.get("cy"))
-        K = np.array([[fx, 0, cx],
-                      [0,  fy, cy],
-                      [0,  0,  1]], dtype=np.float32)
-    return K
-
-
-def parse_pose(d: Dict[str, Any]) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    Accepts:
-      - 'R_co', 't_co'
-      - or {'quaternion_wxyz', 'translation_m'}
-    Returns R (3x3), t (3,)
-    """
-    if "R_co" in d and "t_co" in d:
-        R = np.array(d["R_co"], dtype=np.float32).reshape(3, 3)
-        t = np.array(d["t_co"], dtype=np.float32).reshape(3)
-        return R, t
-    # fallback quaternion format
-    if "quaternion_wxyz" in d and "translation_m" in d:
-        R = quat_wxyz_to_R(d["quaternion_wxyz"])
-        t = np.array(d["translation_m"], dtype=np.float32).reshape(3)
-        return R, t
-    raise ValueError("Pose not found: need (R_co,t_co) or (quaternion_wxyz,translation_m).")
-
-
 def geodesic_deg(R_pred: torch.Tensor, R_gt: torch.Tensor, eps=1e-6) -> torch.Tensor:
     """B×3×3 geodesic rotation error in degrees."""
     R_delta = torch.transpose(R_gt, -1, -2) @ R_pred
@@ -126,9 +55,7 @@ def transform_points(P: torch.Tensor, R: torch.Tensor, t: torch.Tensor) -> torch
 
 
 def project_points(P_cam: torch.Tensor, K: torch.Tensor) -> torch.Tensor:
-    """
-    P_cam: (N,3) in camera space, K: (3,3) -> (N,2) pixels
-    """
+    """P_cam: (N,3), K: (3,3) -> (N,2) pixels"""
     Z = P_cam[:, 2:3].clamp(min=1e-6)
     xy = P_cam[:, :2] / Z
     u = xy[:, 0] * K[0, 0] + K[0, 2]
@@ -140,7 +67,7 @@ def add_metric(P_obj: torch.Tensor,
                R_pred: torch.Tensor, t_pred: torch.Tensor,
                R_gt: torch.Tensor,   t_gt: torch.Tensor) -> float:
     """
-    P_obj: (M,3) points in object frame (torch, cpu or gpu ok)
+    P_obj: (M,3) points in object frame (torch, on device ok)
     R_*, t_*: (3,3), (3,)
     Returns mean L2 distance in *object units*.
     """
@@ -152,10 +79,7 @@ def add_metric(P_obj: torch.Tensor,
 def reproj_rms(P_obj: torch.Tensor,
                R_pred: torch.Tensor, t_pred: torch.Tensor, K: torch.Tensor,
                R_gt: torch.Tensor,   t_gt: torch.Tensor) -> float:
-    """
-    2D RMS reprojection error over sampled object points.
-    Returns pixels.
-    """
+    """2D RMS reprojection error over sampled object points (pixels)."""
     Pp_cam = transform_points(P_obj, R_pred, t_pred)
     Pg_cam = transform_points(P_obj, R_gt, t_gt)
     up = project_points(Pp_cam, K)
@@ -163,79 +87,11 @@ def reproj_rms(P_obj: torch.Tensor,
     return float(torch.sqrt(((up - ug) ** 2).sum(dim=1).mean()).item())
 
 
-# ------------------------------
-# Dataset that reads JSON GT files
-# ------------------------------
-
-class JsonGTDataset(Dataset):
-    """
-    Expects folder with one or more *.json files.
-    JSON must contain either:
-      (A) { "image": <path>, "K": [[...],[...],[...]], "R_co": [[...]], "t_co": [..] }
-    or
-      (B) { "image": <path>, "fx","fy","cx","cy",
-            "quaternion_wxyz":[w,x,y,z], "translation_m":[x,y,z] }
-    """
-    def __init__(self, root: str, image_size: Tuple[int,int] = (544,800)):
-        self.jsons = sorted(glob.glob(os.path.join(root, "**", "*.json"), recursive=True))
-        if not self.jsons:
-            raise FileNotFoundError(f"No JSON files found under: {root}")
-        self.image_size = image_size  # (H, W)
-
-    def __len__(self): 
-        return len(self.jsons)
-
-    def __getitem__(self, idx):
-        jpath = self.jsons[idx]
-        with open(jpath, "r") as f:
-            meta = json.load(f)
-
-        # ---- parse intrinsics & pose ----
-        K = parse_intrinsics(meta)                      # np (3,3)
-        R_gt, t_gt = parse_pose(meta)                  # np (3,3), (3,)
-
-        # ---- image ----
-        if "image" not in meta or meta["image"] is None:
-            # Allow headless metric eval (skip inference)
-            I_t = None
-            H, W = self.image_size
-            K_use = scale_K(K, (H, W), (H, W))  # no-op
-        else:
-            ipath = meta["image"]
-            if not os.path.isabs(ipath):
-                ipath = os.path.join(os.path.dirname(jpath), ipath)
-            img = imageio.imread(ipath)  # H,W,3
-            if img.ndim == 2:
-                img = np.repeat(img[:, :, None], 3, axis=2)  # grayscale -> RGB
-
-            H0, W0 = img.shape[:2]
-            Ht, Wt = self.image_size
-            I_t = to_chw_float01(img)                       # CHW
-            if (H0, W0) != (Ht, Wt):
-                # resize image and scale intrinsics
-                I_t = resize_chw(I_t, (Ht, Wt))
-                K_use = scale_K(K, (H0, W0), (Ht, Wt))
-            else:
-                K_use = K
-
-        sample = {
-            "json_path": jpath,
-            "image": I_t,                 # CHW float [0,1] or None
-            "K": K_use.astype(np.float32),
-            "R_gt": R_gt.astype(np.float32),
-            "t_gt": t_gt.astype(np.float32),
-        }
-        return sample
-
-
-
-# ------------------------------
-# Main evaluation
-# ------------------------------
-
 def load_model(arch: str, ckpt: str, device: str):
     if arch == "regressor":
         model = Regressor().to(device)
+    elif arch == "dinov3":
+        model = DinoV3Regressor(unfreeze_last_blocks=1, freeze_backbone=False).to(device)
     elif arch == "dinov3_lora":
         model = DinoV3RegressorLoRA(unfreeze_last_blocks=1, freeze_backbone=False).to(device)
     else:
@@ -243,34 +99,39 @@ def load_model(arch: str, ckpt: str, device: str):
 
     print(f"Loading checkpoint: {ckpt}")
     state = torch.load(ckpt, map_location=device)
-    sd = state["model_state"] if "model_state" in state else state
+    sd = state["model_state"] if isinstance(state, dict) and "model_state" in state else state
     model.load_state_dict(sd, strict=True)
     model.eval()
     return model
 
 
+# ------------------------------
+# Main
+# ------------------------------
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--data_root", required=True, help="Folder containing *.json GT files")
-    ap.add_argument("--mesh", required=False, help="Path to mesh (OBJ/PLY)", default="../meshes/Item.obj")
+    ap.add_argument("--data_root", required=True, help="Folder with your TripletDataset JSONs")
+    ap.add_argument("--mesh", required=True, help="Path to mesh (OBJ/PLY)")
     ap.add_argument("--ckpt", required=True, help="Path to model weights (.pth)")
-    ap.add_argument("--arch", default="regressor", choices=["regressor","dinov3_lora"])
+    ap.add_argument("--arch", default="regressor", choices=["regressor", "dinov3", "dinov3_lora"])
     ap.add_argument("--batch_size", type=int, default=8)
     ap.add_argument("--num_points", type=int, default=1500, help="Sampled mesh points for ADD/reproj")
-    ap.add_argument("--image_h", type=int, default=544)
-    ap.add_argument("--image_w", type=int, default=800)
     ap.add_argument("--seed", type=int, default=42)
-    ap.add_argument("--compute_reproj", action="store_true", help="Also compute 2D reprojection RMS")
+    ap.add_argument("--num_workers", type=int, default=4)
+    ap.add_argument("--compute_reproj", action="store_true", help="Also compute 2D reprojection RMS (uses K from sample)")
+    ap.add_argument("--denorm_t", action="store_true",
+                    help="Multiply predicted t by D_obj (use if your training predicted t normalized by D_obj).")
     args = ap.parse_args()
 
     set_seed(args.seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    # Data
-    ds = JsonGTDataset(args.data_root, image_size=(args.image_h, args.image_w))
+    # Dataset & loader (uses your TripletDataset exactly)
+    ds = TripletDataset(args.data_root, train=False, transform=None)
     dl = DataLoader(ds, batch_size=args.batch_size, shuffle=False,
-                num_workers=4, pin_memory=(device=="cuda"),
-                collate_fn=lambda x: x)
+                    num_workers=args.num_workers, pin_memory=(device == "cuda"),
+                    collate_fn=lambda x: x)  # keep list of dicts
 
     # Mesh & points
     verts, faces = load_mesh(args.mesh)
@@ -296,46 +157,52 @@ def main():
     sum_tn   = 0.0
     sum_reproj = 0.0
 
-    # Per-sample logs (optional)
+    # Per-sample logs
     per_sample = []
 
     with torch.no_grad():
         for batch in dl:
-            # Collated as a list; process sequentially for simplicity (since images may be None)
             for s in batch:
-                json_path = s["json_path"]
-                K_np = s["K"]; R_gt_np = s["R_gt"]; t_gt_np = s["t_gt"]
+                # Pull metadata
+                stem = s.get("stem", "sample")
+                # K, R, t are tensors from your dataset
+                K_t  = s["K"]           # [3,3] (float, CPU)
+                R_gt = s["R_co"].squeeze(0)  # [3,3]
+                t_gt = s["t_co"].squeeze(0)  # [3]
 
-                K = torch.from_numpy(K_np).to(device)
-                R_gt = torch.from_numpy(R_gt_np).to(device)
-                t_gt = torch.from_numpy(t_gt_np).to(device)
-
-                # Forward pass only if we have an image
-                if s["image"] is not None:
-                    I = s["image"].unsqueeze(0).to(device)  # (1,3,H,W)
-                    # For models expecting D_obj in forward:
-                    D_tensor = torch.as_tensor([D_obj], device=device, dtype=I.dtype)
-                    r6, t_pred = model(I, D_obj=D_tensor)
-                    R_pred = sixd_to_rotmat(r6)
-                    R_pred = R_pred[0]    # (3,3)
-                    t_pred = t_pred[0]    # (3,)
-                else:
-                    # If no image provided, we cannot predict. Skip.
-                    print(f"[WARN] No image in {json_path}; skipping prediction.")
+                # Image
+                I_t = s["image"]        # CHW in [0,1]
+                if I_t is None:
+                    # Your dataset always has images, but guard anyway
+                    print(f"[WARN] No image for {stem}; skipping.")
                     continue
+                I = I_t.unsqueeze(0).to(device)  # (1,3,H,W)
+
+                # Forward
+                D_tensor = torch.as_tensor([D_obj], device=device, dtype=I.dtype)
+                out = model(I, D_obj=D_tensor) if "dinov3" in args.arch or "regressor" in args.arch else model(I)
+                if isinstance(out, tuple) and len(out) == 2:
+                    r6, t_pred = out
+                else:
+                    # fallback if your model returns dict or different layout
+                    r6, t_pred = out["r6"], out["t"]
+
+                R_pred = sixd_to_rotmat(r6)[0]   # (3,3)
+                t_pred = t_pred[0]               # (3,)
+
+                # Optional de-normalization of translation
+                if args.denorm_t:
+                    t_pred = t_pred * D_obj
 
                 # Metrics
-                # Rotation error (deg)
                 rdeg = float(geodesic_deg(R_pred.unsqueeze(0), R_gt.unsqueeze(0))[0].item())
-                # Translation normalized by D_obj
-                tn = float(torch.linalg.norm(t_pred - t_gt).item()) / (D_obj + 1e-8)
-                # ADD and normalized ADD
-                add = add_metric(P_obj, R_pred, t_pred, R_gt, t_gt)
+                tn   = float(torch.linalg.norm(t_pred - t_gt).item()) / (D_obj + 1e-8)
+                add  = add_metric(P_obj, R_pred, t_pred, R_gt, t_gt)
                 addn = add / (D_obj + 1e-8)
 
-                # Optional 2D reprojection RMS
                 reproj = None
                 if args.compute_reproj:
+                    K = K_t.to(device) if isinstance(K_t, torch.Tensor) else torch.from_numpy(K_t).to(device)
                     reproj = reproj_rms(P_obj, R_pred, t_pred, K, R_gt, t_gt)
 
                 # Accumulate
@@ -348,7 +215,7 @@ def main():
                     sum_reproj += reproj
 
                 per_sample.append({
-                    "json": os.path.relpath(json_path, args.data_root),
+                    "sample": stem,
                     "R_deg": rdeg,
                     "Tn": tn,
                     "ADD": add,
@@ -357,14 +224,14 @@ def main():
                 })
 
     if n_samples == 0:
-        print("No evaluable samples (no images found in JSONs).")
+        print("No evaluable samples.")
         return
 
     # Averages
-    avg_add = sum_add / n_samples
-    avg_addn = sum_addn / n_samples
-    avg_rdeg = sum_rdeg / n_samples
-    avg_tn   = sum_tn   / n_samples
+    avg_add   = sum_add / n_samples
+    avg_addn  = sum_addn / n_samples
+    avg_rdeg  = sum_rdeg / n_samples
+    avg_tn    = sum_tn   / n_samples
     avg_reproj = (sum_reproj / n_samples) if args.compute_reproj else None
 
     print("\n===== EVAL RESULTS =====")
@@ -376,8 +243,8 @@ def main():
     if avg_reproj is not None:
         print(f"Reproj RMS px (↓): {avg_reproj:.3f}")
 
-    # Optional: write per-sample CSV next to ckpt
-    out_csv = os.path.join(os.path.dirname(args.ckpt), "eval_results.csv")
+    # Write per-sample CSV next to ckpt
+    out_csv = os.path.join(os.path.dirname(args.ckpt), "eval_results_triplet.csv")
     try:
         import csv
         with open(out_csv, "w", newline="") as f:
