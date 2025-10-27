@@ -125,7 +125,7 @@ def main():
     args = ap.parse_args()
 
     set_seed(args.seed)
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
     # Dataset & loader (uses your TripletDataset exactly)
     ds = TripletDataset(args.data_root, train=False, transform=None)
@@ -137,6 +137,7 @@ def main():
     verts, faces = load_mesh(args.mesh)
     verts = verts.to(device)
     faces = faces.to(device)
+
 
     with torch.no_grad():
         # Points for metrics (object space)
@@ -166,12 +167,12 @@ def main():
                 # Pull metadata
                 stem = s.get("stem", "sample")
                 # K, R, t are tensors from your dataset
-                K_t  = s["K"]           # [3,3] (float, CPU)
-                R_gt = s["R_co"].squeeze(0)  # [3,3]
-                t_gt = s["t_co"].squeeze(0)  # [3]
+                K_t  = s["K"].to(device)           # [3,3] (float, CPU)
+                R_gt = s["R_co"].squeeze(0).to(device)  # [3,3]
+                t_gt = s["t_co"].squeeze(0).to(device)  # [3]
 
                 # Image
-                I_t = s["image"]        # CHW in [0,1]
+                I_t = s["image"].to(device)        # CHW in [0,1]
                 if I_t is None:
                     # Your dataset always has images, but guard anyway
                     print(f"[WARN] No image for {stem}; skipping.")
