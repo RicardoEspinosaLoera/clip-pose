@@ -104,11 +104,11 @@ class TripletDataset(Dataset):
         Hs, Ws = int(H/2), int(W/2)
 
         # Resize RGB images (bilinear interpolation)
-        I_use  = cv2.resize(I_np,  (Hs, Ws), interpolation=cv2.INTER_LINEAR)
-        BG_use = cv2.resize(BG_np, (Hs, Ws), interpolation=cv2.INTER_LINEAR)
+        I_use  = cv2.resize(I_np,  (Ws, Hs), interpolation=cv2.INTER_LINEAR)
+        BG_use = cv2.resize(BG_np, (Ws, Hs), interpolation=cv2.INTER_LINEAR)
 
         # Resize mask (nearest neighbor to preserve binary values)
-        M_use  = cv2.resize(M_np,  (Hs, Ws), interpolation=cv2.INTER_NEAREST)
+        M_use  = cv2.resize(M_np,  (Ws, Hs), interpolation=cv2.INTER_NEAREST)
 
         #H, W = I_np.shape[:2]
         #print(W, H)
