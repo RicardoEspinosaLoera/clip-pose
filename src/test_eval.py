@@ -18,6 +18,30 @@ import trimesh
 # ------------------------------
 # Utilities
 # ------------------------------
+def scale_K(K: np.ndarray, from_size: Tuple[int,int], to_size: Tuple[int,int]) -> np.ndarray:
+    """Scale intrinsics K when resizing from (H,W) -> (Hs,Ws)."""
+    H, W = from_size
+    Hs, Ws = to_size
+    sy = Hs / float(H)
+    sx = Ws / float(W)
+    K_scaled = K.copy()
+    K_scaled[0, 0] *= sx  # fx
+    K_scaled[1, 1] *= sy  # fy
+    K_scaled[0, 2] *= sx  # cx
+    K_scaled[1, 2] *= sy  # cy
+    return K_scaled
+
+def to_chw_float01(img: np.ndarray) -> torch.Tensor:
+    """HWC uint8/float -> CHW float32 [0,1]."""
+    if img.dtype != np.float32:
+        img = img.astype(np.float32)
+    if img.max() > 1.0:
+        img = img / 255.0
+    return torch.from_numpy(img).permute(2,0,1).contiguous()
+
+def resize_chw(img_chw: torch.Tensor, out_hw: Tuple[int,int]) -> torch.Tensor:
+    """CHW float[0,1] -> CHW resized using bilinear."""
+    return F.interpolate(img_chw.unsqueeze(0), size=out_hw, mode='bilinear', align_corners=False).squeeze(0)
 
 def set_seed(s=42):
     import random
@@ -145,92 +169,64 @@ def reproj_rms(P_obj: torch.Tensor,
 
 class JsonGTDataset(Dataset):
     """
-    Expects a folder with one or more *.json files.
-    Each JSON should contain either:
-      - { "image": <path>, "K": 3x3 or {fx,fy,cx,cy}, "R_co":3x3, "t_co":3 }
-        (optional "mask","bg" allowed but not required for metrics)
+    Expects folder with one or more *.json files.
+    JSON must contain either:
+      (A) { "image": <path>, "K": [[...],[...],[...]], "R_co": [[...]], "t_co": [..] }
     or
-      - { "image": <path>, "fx","fy","cx","cy", "quaternion_wxyz":[w,x,y,z], "translation_m":[x,y,z] }
+      (B) { "image": <path>, "fx","fy","cx","cy",
+            "quaternion_wxyz":[w,x,y,z], "translation_m":[x,y,z] }
     """
-    def __init__(self, root: str, image_size: Tuple[int,int]=(544,800)):
+    def __init__(self, root: str, image_size: Tuple[int,int] = (544,800)):
         self.jsons = sorted(glob.glob(os.path.join(root, "**", "*.json"), recursive=True))
         if not self.jsons:
             raise FileNotFoundError(f"No JSON files found under: {root}")
-        self.image_size = image_size
+        self.image_size = image_size  # (H, W)
 
-    def __len__(self): return len(self.jsons)
+    def __len__(self): 
+        return len(self.jsons)
 
     def __getitem__(self, idx):
-        jpath = self.items[idx]
-        stem = os.path.splitext(jpath)[0]
-        ipath, bpath, mpath = stem + '.png', stem + '_bg.png', stem + '_mask.png'
-
-        # --- Load images ---
-        I_np  = imageio.imread(ipath)       # (H, W, 3)
-        BG_np = imageio.imread(bpath)       # (H, W, 3)
-        M_np  = imageio.imread(mpath)       # (H, W)
-
-        H, W = I_np.shape[:2]
-        Hs, Ws = int(H/2), int(W/2)
-
-        I_use  = resize_bilinear_hwc(I_np,  (Hs, Ws))   # -> (Hs,Ws,3) float32 [0,1]
-        BG_use = resize_bilinear_hwc(BG_np, (Hs, Ws))   # -> (Hs,Ws,3) float32 [0,1]
-        M_use  = resize_bilinear_hwc(M_np,  (Hs, Ws))   # -> (Hs,Ws)   float32 [0,1]
-
-        #H, W = I_np.shape[:2]
-        #print(W, H)
-
-        # --- Load metadata ---
-        with open(jpath, 'r') as f:
+        jpath = self.jsons[idx]
+        with open(jpath, "r") as f:
             meta = json.load(f)
 
-        try:
-            cam = meta['camera']
-            clip_world = meta['clip']['pose_world']
-            clip_se3 = meta['clip']['pose_se3']
+        # ---- parse intrinsics & pose ----
+        K = parse_intrinsics(meta)                      # np (3,3)
+        R_gt, t_gt = parse_pose(meta)                  # np (3,3), (3,)
 
-            R_wc, t_wc = world_to_camera_from_vtk(cam["position"], cam["focal_point"], cam["view_up"])
+        # ---- image ----
+        if "image" not in meta or meta["image"] is None:
+            # Allow headless metric eval (skip inference)
+            I_t = None
+            H, W = self.image_size
+            K_use = scale_K(K, (H, W), (H, W))  # no-op
+        else:
+            ipath = meta["image"]
+            if not os.path.isabs(ipath):
+                ipath = os.path.join(os.path.dirname(jpath), ipath)
+            img = imageio.imread(ipath)  # H,W,3
+            if img.ndim == 2:
+                img = np.repeat(img[:, :, None], 3, axis=2)  # grayscale -> RGB
 
-            q = np.asarray(clip_world["quaternion_wxyz"], dtype=np.float32)
-            R_ow = torch.from_numpy(quat_wxyz_to_R(q)).float()       # [3,3]
-            t_ow = torch.tensor(clip_world["translation_m"], dtype=torch.float32)  # [3]
+            H0, W0 = img.shape[:2]
+            Ht, Wt = self.image_size
+            I_t = to_chw_float01(img)                       # CHW
+            if (H0, W0) != (Ht, Wt):
+                # resize image and scale intrinsics
+                I_t = resize_chw(I_t, (Ht, Wt))
+                K_use = scale_K(K, (H0, W0), (Ht, Wt))
+            else:
+                K_use = K
 
-            # --- 3) Compose Object → Camera
-            R_oc = torch.matmul(R_wc, R_ow)                        # [1,3,3]
-            t_oc = torch.matmul(R_wc, t_ow) + t_wc      # [1,3]
-
-            K = kaolin_cam_to_K(cam, image_size=(W, H))
-            K_use = scale_K(K, (H, W), (Hs, Ws))
-
-
-        except Exception as e:
-            raise RuntimeError(f"[{os.path.basename(jpath)}] compose_camera_object failed: {e}")
-
-        # --- To tensors ---
-        I_t  = torch.from_numpy(I_np).permute(2, 0, 1).float() / 255.0
-        BG_t = torch.from_numpy(BG_np).permute(2, 0, 1).float() / 255.0
-        if M_np.ndim == 3:
-            M_np = M_np[..., 0]
-        M_t = torch.from_numpy((M_np > 0).astype('float32')).unsqueeze(0)
-
-        # --- Optional augmentations ---
-        if self.train and self.transform is not None:
-            I_t = self.transform(I_t)
-            BG_t = self.transform(BG_t)
-
-        # --- Pack final sample ---
         sample = {
-            'image': I_t,
-            'bg': BG_t,
-            'mask': M_t,
-            'K': torch.from_numpy(K_use).float(),
-            'R_co': R_oc,
-            't_co': t_oc,
-            'stem': os.path.basename(stem),
-            #'cam': meta['camera']
+            "json_path": jpath,
+            "image": I_t,                 # CHW float [0,1] or None
+            "K": K_use.astype(np.float32),
+            "R_gt": R_gt.astype(np.float32),
+            "t_gt": t_gt.astype(np.float32),
         }
-
         return sample
+
 
 
 # ------------------------------
@@ -240,19 +236,14 @@ class JsonGTDataset(Dataset):
 def load_model(arch: str, ckpt: str, device: str):
     if arch == "regressor":
         model = Regressor().to(device)
-    elif arch == "dinov3":
-        # default: unfreeze last block; adjust if needed
-        model = DinoV3Regressor(unfreeze_last_blocks=1, freeze_backbone=False).to(device)
+    elif arch == "dinov3_lora":
+        model = DinoV3RegressorLoRA(unfreeze_last_blocks=1, freeze_backbone=False).to(device)
     else:
-        raise ValueError("--arch must be one of ['regressor','dinov3']")
+        raise ValueError("--arch must be one of ['regressor','dinov3','dinov3_lora']")
 
     print(f"Loading checkpoint: {ckpt}")
     state = torch.load(ckpt, map_location=device)
-    # Support both full checkpoint and raw state_dict
-    if "model_state" in state:
-        sd = state["model_state"]
-    else:
-        sd = state
+    sd = state["model_state"] if "model_state" in state else state
     model.load_state_dict(sd, strict=True)
     model.eval()
     return model
@@ -263,7 +254,7 @@ def main():
     ap.add_argument("--data_root", required=True, help="Folder containing *.json GT files")
     ap.add_argument("--mesh", required=False, help="Path to mesh (OBJ/PLY)", default="../meshes/Item.obj")
     ap.add_argument("--ckpt", required=True, help="Path to model weights (.pth)")
-    ap.add_argument("--arch", default="regressor", choices=["regressor","dinov3"])
+    ap.add_argument("--arch", default="regressor", choices=["regressor","dinov3_lora"])
     ap.add_argument("--batch_size", type=int, default=8)
     ap.add_argument("--num_points", type=int, default=1500, help="Sampled mesh points for ADD/reproj")
     ap.add_argument("--image_h", type=int, default=544)
@@ -277,7 +268,9 @@ def main():
 
     # Data
     ds = JsonGTDataset(args.data_root, image_size=(args.image_h, args.image_w))
-    dl = DataLoader(ds, batch_size=args.batch_size, shuffle=False, num_workers=4, pin_memory=True, collate_fn=lambda x: x)
+    dl = DataLoader(ds, batch_size=args.batch_size, shuffle=False,
+                num_workers=4, pin_memory=(device=="cuda"),
+                collate_fn=lambda x: x)
 
     # Mesh & points
     verts, faces = load_mesh(args.mesh)
