@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import timm
-from src.LoRALinear import import (
+from src.LoRALinear import (
     _lora_wrap_linear, add_lora_to_vit_blocks
 )
 
