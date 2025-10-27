@@ -8,7 +8,7 @@ import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 
 from src.models import Regressor
-from src.models_dinov3 import DinoV3Regressor
+from src.models_dinov3 import DinoV3RegressorLoRA
 from src.camera import sixd_to_rotmat
 from src.losses import sample_mesh_points
 
