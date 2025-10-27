@@ -303,17 +303,17 @@ def main(cfg_path='config.yaml'):
     # ---- model/optim ----
    
 
-    #model = Regressor().to(device)
+    model = Regressor().to(device)
     # Unfreeze ONLY the last transformer block + final norm (default):
     #model = DinoV3Regressor(unfreeze_last_blocks=1, freeze_backbone=False).to(device)
-    model = DinoV3RegressorLoRA(
-        freeze_backbone=True,          # backbone frozen
-        use_lora=True,
-        lora_rank=8, lora_alpha=16,
-        lora_dropout=0.05,
-        lora_last_blocks=6,            # adapters on last 6 blocks
-        unfreeze_last_blocks=0,        # keep 0 if you want LoRA-only first
-    ).to(device)
+    # model = DinoV3RegressorLoRA(
+    #     freeze_backbone=True,          # backbone frozen
+    #     use_lora=True,
+    #     lora_rank=8, lora_alpha=16,
+    #     lora_dropout=0.05,
+    #     lora_last_blocks=6,            # adapters on last 6 blocks
+    #     unfreeze_last_blocks=0,        # keep 0 if you want LoRA-only first
+    # ).to(device)
 
     # Add this line:
     if torch.cuda.device_count() > 1:
