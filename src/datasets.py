@@ -7,36 +7,29 @@ from .camera import kaolin_cam_to_K, world_to_camera_from_vtk, quat_wxyz_to_R
 import numpy as np
 from PIL import Image
 import cv2
+from typing import Optional, Tuple, Union
 
 def _to_uint8(img):
-    """Ensure uint8 for PIL."""
     if img.dtype == np.uint8:
         return img
-    # assume img is float in [0,1] (or similar); scale + clamp
     img = np.clip(img, 0, 1)
     return (img * 255.0 + 0.5).astype(np.uint8)
 
 def _from_uint8(img_u8):
-    """Return float32 in [0,1]."""
     return (img_u8.astype(np.float32)) / 255.0
 
 def scale_K(K, src_size, dst_size):
-    """
-    Scale camera intrinsics from src_size (H,W) to dst_size (H2,W2).
-    Works with batched K: [B,3,3] or unbatched [3,3].
-    """
     H, W   = src_size
     H2, W2 = dst_size
     sx = W2 / W
     sy = H2 / H
-
     K_out = K.copy()
     if K_out.ndim == 2:  # [3,3]
-        K_out[0,0] *= sx         # fx
-        K_out[1,1] *= sy         # fy
-        K_out[0,2] *= sx         # cx
-        K_out[1,2] *= sy         # cy
-        K_out[0,1] *= sx         # skew (usually 0), u scales with width
+        K_out[0,0] *= sx  # fx
+        K_out[1,1] *= sy  # fy
+        K_out[0,2] *= sx  # cx
+        K_out[1,2] *= sy  # cy
+        K_out[0,1] *= sx  # skew (u scales with width)
     else:                 # [B,3,3]
         K_out[:,0,0] *= sx
         K_out[:,1,1] *= sy
@@ -45,122 +38,137 @@ def scale_K(K, src_size, dst_size):
         K_out[:,0,1] *= sx
     return K_out
 
-def resize_bilinear_hwc(img, size):
-    """
-    img: np.ndarray with shape (H,W,C) or (H,W)
-    size: (Hs, Ws)
-    returns: float32 array in [0,1], same channel count as input
-    """
-    Hs, Ws = size
-
-    # Handle grayscale vs color
-    if img.ndim == 2:  # (H,W) grayscale
-        im_pil = Image.fromarray(_to_uint8(img))
-        im_res = im_pil.resize((Ws, Hs), resample=Image.BILINEAR)
-        out = np.asarray(im_res)
-        return np.clip(_from_uint8(out), 0.0, 1.0)
-
-    elif img.ndim == 3:  # (H,W,C)
-        # If C==4 (RGBA) it's fine; PIL will keep channels
-        im_pil = Image.fromarray(_to_uint8(img))
-        im_res = im_pil.resize((Ws, Hs), resample=Image.BILINEAR)
-        out = np.asarray(im_res)
-        return np.clip(_from_uint8(out), 0.0, 1.0)
-
-    else:
-        raise ValueError(f"Unsupported image shape {img.shape}; expected (H,W) or (H,W,C).")
-
-
 class TripletDataset(Dataset):
     """
-    Dataset loader for Kaolin-style ground truth:
-      - JSON has 'camera' (fx, fy, cx, cy)
-      - JSON has 'clip.pose_se3.rotation' and 'translation_m' in camera coords
-      - Images are (rgb, bg, mask) triplets
+    Kaolin-style GT:
+      - JSON 'camera' (fx,fy,cx,cy + VTK extrinsics fields)
+      - JSON clip.pose_* (world pose); we compose to camera here
+      - Files: stem.png, stem_bg.png, stem_mask.png
+
+    New:
+      - downsample: integer factor or explicit out_size=(Hs,Ws)
+      - normalize_from_backbone: callable(img[C,H,W]->img_norm) e.g., from timm cfg
     """
 
-    def __init__(self, root, train=True, transform=None, strict_tz=True):
+    def __init__(
+        self,
+        root: str,
+        train: bool = True,
+        transform = None,                      # optional extra transform after resizing (expects [C,H,W] float [0,1])
+        strict_tz: bool = True,                # kept for compatibility (unused)
+        downsample: Union[int, Tuple[int,int]] = 2,
+        out_size: Optional[Tuple[int,int]] = None,
+        normalize_from_backbone = None,        # callable built via build_backbone_transform(backbone)
+        return_d_obj: bool = False,            # if your JSON has object diameter in meters
+        d_obj_json_path: Tuple[str,...] = ("object", "diameter_m"),
+    ):
         self.root = root
         self.items = sorted([os.path.join(root, f) for f in os.listdir(root) if f.endswith('.json')])
         self.train = train
-        self.transform = transform  # torchvision-style
+        self.transform = transform
         self.strict_tz = strict_tz
+
+        self.normalize_from_backbone = normalize_from_backbone
+        self.return_d_obj = return_d_obj
+        self.d_obj_json_path = d_obj_json_path
+
+        self.downsample = downsample
+        self.out_size = out_size
 
     def __len__(self):
         return len(self.items)
 
+    def _decide_size(self, H, W):
+        if self.out_size is not None:
+            Hs, Ws = self.out_size
+        elif isinstance(self.downsample, int) and self.downsample > 1:
+            Hs, Ws = int(H / self.downsample), int(W / self.downsample)
+        else:
+            Hs, Ws = H, W
+        return Hs, Ws
 
     def __getitem__(self, idx):
         jpath = self.items[idx]
         stem = os.path.splitext(jpath)[0]
         ipath, bpath, mpath = stem + '.png', stem + '_bg.png', stem + '_mask.png'
 
-        # --- Load images ---
-        I_np  = imageio.imread(ipath)       # (H, W, 3)
-        BG_np = imageio.imread(bpath)       # (H, W, 3)
-        M_np  = imageio.imread(mpath)       # (H, W)
+        # --- Load images (RGB uint8) ---
+        I_np  = imageio.imread(ipath)       # (H,W,3)
+        BG_np = imageio.imread(bpath)       # (H,W,3)
+        M_np  = imageio.imread(mpath)       # (H,W) or (H,W,1/3)
 
         H, W = I_np.shape[:2]
-        Hs, Ws = int(H/2), int(W/2)
+        Hs, Ws = self._decide_size(H, W)
 
-        # Resize RGB images (bilinear interpolation)
+        # --- Resize ---
+        # cv2.resize expects (width, height)
         I_use  = cv2.resize(I_np,  (Ws, Hs), interpolation=cv2.INTER_LINEAR)
         BG_use = cv2.resize(BG_np, (Ws, Hs), interpolation=cv2.INTER_LINEAR)
 
-        # Resize mask (nearest neighbor to preserve binary values)
+        if M_np.ndim == 3:
+            M_np = M_np[..., 0]
         M_use  = cv2.resize(M_np,  (Ws, Hs), interpolation=cv2.INTER_NEAREST)
 
-        #H, W = I_np.shape[:2]
-        #print(W, H)
-
-        # --- Load metadata ---
+        # --- Load metadata / compose O->C ---
         with open(jpath, 'r') as f:
             meta = json.load(f)
 
         try:
             cam = meta['camera']
             clip_world = meta['clip']['pose_world']
-            clip_se3 = meta['clip']['pose_se3']
 
-            R_wc, t_wc = world_to_camera_from_vtk(cam["position"], cam["focal_point"], cam["view_up"])
+            R_wc, t_wc = world_to_camera_from_vtk(
+                cam["position"], cam["focal_point"], cam["view_up"]
+            )  # torch [3,3], [3]
 
             q = np.asarray(clip_world["quaternion_wxyz"], dtype=np.float32)
-            R_ow = torch.from_numpy(quat_wxyz_to_R(q)).float()       # [3,3]
+            R_ow = torch.from_numpy(quat_wxyz_to_R(q)).float()     # [3,3]
             t_ow = torch.tensor(clip_world["translation_m"], dtype=torch.float32)  # [3]
 
-            # --- 3) Compose Object → Camera
-            R_oc = torch.matmul(R_wc, R_ow)                        # [1,3,3]
-            t_oc = torch.matmul(R_wc, t_ow) + t_wc      # [1,3]
+            # Object -> Camera
+            R_oc = R_wc @ R_ow
+            t_oc = (R_wc @ t_ow) + t_wc
 
-            K = kaolin_cam_to_K(cam, image_size=(W, H))
+            # Intrinsics scaled to (Hs, Ws)
+            K = kaolin_cam_to_K(cam, image_size=(W, H))            # np[3,3]
             K_use = scale_K(K, (H, W), (Hs, Ws))
 
-
+            # Optional object diameter
+            D_obj = None
+            if self.return_d_obj:
+                node = meta
+                for key in self.d_obj_json_path:
+                    node = node[key]
+                D_obj = float(node)  # meters
         except Exception as e:
             raise RuntimeError(f"[{os.path.basename(jpath)}] compose_camera_object failed: {e}")
 
-        # --- To tensors ---
-        I_use  = torch.from_numpy(I_use).permute(2, 0, 1).float() / 255.0
-        BG_use = torch.from_numpy(BG_use).permute(2, 0, 1).float() / 255.0
-        if M_np.ndim == 3:
-            M_np = M_np[..., 0]
-        M_use = torch.from_numpy((M_use > 0).astype('float32')).unsqueeze(0)
+        # --- To tensors float[0,1] ---
+        I_t  = torch.from_numpy(I_use).permute(2,0,1).float() / 255.0
+        BG_t = torch.from_numpy(BG_use).permute(2,0,1).float() / 255.0
+        M_t  = torch.from_numpy((M_use > 0).astype('float32')).unsqueeze(0)
 
-        # --- Optional augmentations ---
+        # --- Optional user transforms (e.g., color jitter) BEFORE normalization ---
         if self.train and self.transform is not None:
-            I_use = self.transform(I_use)
-            BG_use = self.transform(BG_use)
+            I_t  = self.transform(I_t)
+            BG_t = self.transform(BG_t)
 
-        # --- Pack final sample ---
+        # --- Backbone-specific normalization / final resize ---
+        if self.normalize_from_backbone is not None:
+            I_t  = self.normalize_from_backbone(I_t)
+            BG_t = self.normalize_from_backbone(BG_t)
+
         sample = {
-            'image': I_use,
-            'bg': BG_use,
-            'mask': M_use,
-            'K': torch.from_numpy(K_use).float(),
-            'R_co': R_oc,
-            't_co': t_oc,
+            'image': I_t,              # [3,h,w] (possibly resized & normalized)
+            'bg': BG_t,                # same shape / norm as image
+            'mask': M_t,               # [1,h,w], binary float
+            'K': torch.from_numpy(K_use).float(),  # [3,3]
+            'R_co': R_oc,              # torch [3,3]
+            't_co': t_oc,              # torch [3]
             'stem': os.path.basename(stem),
-            #'cam': meta['camera']
         }
+
+        if self.return_d_obj:
+            sample['D_obj'] = torch.tensor(D_obj, dtype=torch.float32)
 
         return sample

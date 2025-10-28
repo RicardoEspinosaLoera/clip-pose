@@ -15,6 +15,52 @@ import torchvision.transforms.functional as TF
 import torch.nn.functional as F
 import math
 import trimesh
+import timm
+
+backbone_cfg = timm.create_model(
+    "vit_small_patch16_dinov3.lvd1689m",
+    pretrained=True,
+    num_classes=0,
+    global_pool=""
+)
+
+def trainable_param_groups(model, base_lr=1e-5, lora_lr=1e-4, wd=0.05):
+    """
+    Build optimizer parameter groups for DINOv3+LoRA fine-tuning.
+
+    Groups:
+      - Heads & neck  → base_lr (default 1e-5)
+      - LoRA adapters → lora_lr (default 1e-4)
+    """
+    heads, lora, stray = [], [], []
+
+    for name, param in model.named_parameters():
+        if not param.requires_grad:
+            continue
+        lname = name.lower()
+        if "lora_" in lname:
+            lora.append(param)
+        elif lname.startswith("neck.") or lname.startswith("head_"):
+            heads.append(param)
+        else:
+            stray.append(param)
+
+    # freeze anything unexpected
+    for p in stray:
+        p.requires_grad = False
+
+    # sanity checks
+    if len(lora) == 0:
+        print("[warn] No LoRA params found — check add_lora_to_vit_blocks() naming.")
+    if len(heads) == 0:
+        print("[warn] No head/neck params found — model might be fully frozen!")
+
+    print(f"[optimizer groups] heads={len(heads)} lora={len(lora)} stray={len(stray)}")
+
+    return [
+        {"params": heads, "lr": base_lr, "weight_decay": wd},
+        {"params": lora,  "lr": lora_lr, "weight_decay": 0.0},
+    ]
 
 @torch.no_grad()
 def save_or_log_overlay(I, I_comp, sil, rgb, M, out_dir, tag, step, to_wandb=False):
@@ -279,15 +325,63 @@ def main(cfg_path='config.yaml'):
     wandb.define_metric("train/*", step_metric="global_step")
     wandb.define_metric("val/*",   step_metric="global_step")
 
-    # ---- data ----
-    train_tf = make_train_transform()
-    ds_tr = TripletDataset(cfg['data']['train_root'], train=True,  transform=train_tf)
-    ds_va = TripletDataset(cfg['data']['val_root'],   train=False, transform=None)
+    # ---- data resnet18 ----
+    # train_tf = make_train_transform()
+    # ds_tr = TripletDataset(cfg['data']['train_root'], train=True,  transform=train_tf)
+    # ds_va = TripletDataset(cfg['data']['val_root'],   train=False, transform=None)
 
-    tr = DataLoader(ds_tr, batch_size=cfg['optim']['batch_size'], shuffle=True,
-                    num_workers=4, pin_memory=True)
-    va = DataLoader(ds_va, batch_size=cfg['optim']['batch_size'], shuffle=False,
-                    num_workers=4, pin_memory=True)
+    # tr = DataLoader(ds_tr, batch_size=cfg['optim']['batch_size'], shuffle=True,
+    #                 num_workers=4, pin_memory=True)
+    # va = DataLoader(ds_va, batch_size=cfg['optim']['batch_size'], shuffle=False,
+    #                 num_workers=4, pin_memory=True)
+
+    # ---- data Dinov3 ----
+
+    # Get the normalization transform from pretrained cfg
+    normalize_tf = build_backbone_transform(backbone_cfg, to_size_from_cfg=True)
+
+    # Your existing train augmentation (brightness, flips, etc.)
+    train_tf = make_train_transform()
+
+    # Build datasets
+    ds_tr = TripletDataset(
+        cfg['data']['train_root'],
+        train=True,
+        transform=train_tf,                   # color/geom augments
+        downsample=2,                         # or out_size=(272,400)
+        normalize_from_backbone=normalize_tf, # normalize + resize to 224×224
+        return_d_obj=True                     # if JSON has object diameter
+    )
+
+    ds_va = TripletDataset(
+        cfg['data']['val_root'],
+        train=False,
+        transform=None,
+        downsample=2,
+        normalize_from_backbone=normalize_tf,
+        return_d_obj=True
+    )
+
+    # Build loaders
+    tr = DataLoader(
+        ds_tr,
+        batch_size=cfg['optim']['batch_size'],
+        shuffle=True,
+        num_workers=4,
+        pin_memory=True,
+        persistent_workers=True,
+        drop_last=True,
+    )
+
+    va = DataLoader(
+        ds_va,
+        batch_size=cfg['optim']['batch_size'],
+        shuffle=False,
+        num_workers=4,
+        pin_memory=True,
+        persistent_workers=True,
+    )
+        
 
     # ---- mesh & renderer ----
     verts, faces = load_mesh('./meshes/Item.obj')
@@ -302,27 +396,32 @@ def main(cfg_path='config.yaml'):
 
     # ---- model/optim ----
    
+    #Resnet18
+    #model = Regressor().to(device)
+    #Dinov3
+    model = DinoV3RegressorLoRA(
+        freeze_backbone=True,
+        lora_rank=8, lora_alpha=16, lora_dropout=0.05,
+        lora_last_blocks=6, lora_include_mlp=False,
+        pool_mode="avg+cls", t_head_scale=0.1,
+    )
 
-    model = Regressor().to(device)
-    # Unfreeze ONLY the last transformer block + final norm (default):
-    #model = DinoV3Regressor(unfreeze_last_blocks=1, freeze_backbone=False).to(device)
-    # model = DinoV3RegressorLoRA(
-    #     freeze_backbone=True,          # backbone frozen
-    #     use_lora=True,
-    #     lora_rank=8, lora_alpha=16,
-    #     lora_dropout=0.05,
-    #     lora_last_blocks=6,            # adapters on last 6 blocks
-    #     unfreeze_last_blocks=0,        # keep 0 if you want LoRA-only first
-    # ).to(device)
+
 
     # Add this line:
     if torch.cuda.device_count() > 1:
         print(f"Using {torch.cuda.device_count()} GPUs via DataParallel")
         model = torch.nn.DataParallel(model)
-        
-    opt = torch.optim.AdamW(model.parameters(),
-                            lr=cfg['optim']['lr'],
-                            weight_decay=cfg['optim']['weight_decay'])
+    
+    #Restnet18
+    # opt = torch.optim.AdamW(model.parameters(),
+    #                         lr=cfg['optim']['lr'],
+    #                         weight_decay=cfg['optim']['weight_decay'])
+    #DinoV3
+    opt = torch.optim.AdamW(
+        trainable_param_groups(model, base_lr=cfg['optim']['lr'], lora_lr=1e-4, wd=0.05),
+        betas=(0.9, 0.999),
+    )
 
     best_key = cfg.get('train_io', {}).get('model_select_key', 'loss')  # 'ADDn' if you use it
     best_val = float('inf')
