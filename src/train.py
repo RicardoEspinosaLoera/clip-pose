@@ -405,8 +405,7 @@ def main(cfg_path='config.yaml'):
         lora_rank=8, lora_alpha=16, lora_dropout=0.05,
         lora_last_blocks=6, lora_include_mlp=False,
         pool_mode="avg+cls", t_head_scale=0.1,
-    )
-
+    ).to(device)
 
 
     # Add this line:
