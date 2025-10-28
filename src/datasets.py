@@ -22,7 +22,7 @@ def scale_K(K, src_size, dst_size):
     
     H, W   = src_size
     H2, W2 = dst_size
-    if (H =! H2 and W =! W2):
+    if (H != H2 and W != W2):
         sx = W2 / W
         sy = H2 / H
         K_out = K.copy()
