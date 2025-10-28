@@ -38,6 +38,8 @@ def scale_K(K, src_size, dst_size):
             K_out[:,0,2] *= sx
             K_out[:,1,2] *= sy
             K_out[:,0,1] *= sx
+    else: 
+        K_out = K
     return K_out
 
 class TripletDataset(Dataset):
