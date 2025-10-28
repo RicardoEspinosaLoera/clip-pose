@@ -12,7 +12,7 @@ optim:
   lr: 1.0e-4
   weight_decay: 1.0e-4
   batch_size: 8
-  epochs: 30
+  epochs: 40
 
 loss:
   lambda_sil: 5.0
