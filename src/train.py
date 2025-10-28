@@ -9,6 +9,7 @@ from src.renderer import SoftMeshRenderer
 from src.losses import (
     sample_mesh_points, pose_loss2, pose_loss_regression
 )
+from src.data_root import (build_backbone_transform)
 import wandb
 import torchvision.transforms as T
 import torchvision.transforms.functional as TF
