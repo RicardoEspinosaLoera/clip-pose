@@ -214,8 +214,8 @@ def run_epoch(model, renderer, loader, device, cfg, P_obj, D_obj, verts, mode,
                 f"{mode}/Tn": batch_Tn,
                 f"{mode}/Tn": batch_Tn,
             })
-            save_or_log_overlay(I, I_comp, overlay,rgb, M, os.path.join(cfg['train_io']['out_dir'], 'val_vis'), 'val', step,
-                                to_wandb=(wandb is not None and cfg['wandb']['enabled']))
+            # save_or_log_overlay(I, I_comp, overlay,rgb, M, os.path.join(cfg['train_io']['out_dir'], 'val_vis'), 'val', step,
+            #                     to_wandb=(wandb is not None and cfg['wandb']['enabled']))
 
     # ---- epoch averages ----
     avg = {
