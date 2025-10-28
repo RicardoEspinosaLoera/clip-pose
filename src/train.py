@@ -16,6 +16,7 @@ import torch.nn.functional as F
 import math
 import trimesh
 import timm
+import torch.nn as nn
 
 
 @torch.no_grad()
