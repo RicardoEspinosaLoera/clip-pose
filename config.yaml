@@ -30,6 +30,8 @@ train_io:
   log_interval: 50
   val_interval_epochs: 1
   save_val_overlays: true
+  lambda_rot: 1.5
+  lambda_trans: 1.0
 
 # ====== WANDB ======
 wandb:
