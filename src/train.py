@@ -109,7 +109,36 @@ def load_mesh(path):
     return V, F
 
 
+def trainable_param_groups_more(model, head_lr=1e-5, lora_lr=1e-4, bb_lr=5e-6):
+    heads, lora, backbone = [], [], []
+    for n,p in model.named_parameters():
+        if not p.requires_grad: 
+            continue
+        ln = n.lower()
+        if "lora_" in ln:
+            lora.append(p)
+        elif ln.startswith("neck.") or ln.startswith("head_"):
+            heads.append(p)
+        else:
+            backbone.append(p)  # these are the unfrozen last blocks + norm
 
+    # weight decay rules: no WD for norms/biases/LoRA
+    def wd_filter(params):
+        dec, nde = [], []
+        for p in params:
+            name = None
+            # try to recover name (optional); if not available, use ndim heuristic
+            # We'll just use ndim heuristic:
+            (dec if p.ndim >= 2 else nde).append(p)
+        return dec, nde
+
+    bb_wd, bb_nowd = wd_filter(backbone)
+    return [
+        {"params": heads,       "lr": head_lr, "weight_decay": 0.05},
+        {"params": lora,        "lr": lora_lr, "weight_decay": 0.0},
+        {"params": bb_wd,       "lr": bb_lr,   "weight_decay": 0.05},
+        {"params": bb_nowd,     "lr": bb_lr,   "weight_decay": 0.0},
+    ]
 
 
 def rot_angles_rad(R_pred, R_gt, eps=1e-6):
@@ -263,6 +292,39 @@ def save_checkpoint(model, optimizer, epoch, out_dir, name="checkpoint", extra=N
     print(f"✅ Saved checkpoint: {ckpt_path}")
     return ckpt_path
 
+def llrd_param_groups(model, head_lr=1e-5, lora_lr=1e-4, top_lr=5e-6, decay=0.7):
+    groups = []
+    # heads
+    heads = [p for n,p in model.named_parameters() if p.requires_grad and (n.startswith("neck.") or n.startswith("head_"))]
+    groups.append({"params": heads, "lr": head_lr, "weight_decay": 0.05})
+
+    # LoRA
+    lora = [p for n,p in model.named_parameters() if p.requires_grad and "lora_" in n.lower()]
+    groups.append({"params": lora, "lr": lora_lr, "weight_decay": 0.0})
+
+    # unfrozen blocks with decay
+    if hasattr(model.backbone, "blocks"):
+        blocks = model.backbone.blocks
+        L = len(blocks)
+        # find which are unfrozen
+        for i, blk in enumerate(blocks):
+            blk_params = [p for p in blk.parameters() if p.requires_grad and "lora_" not in p.__class__.__name__.lower()]
+            if not blk_params:
+                continue
+            depth = L - i  # closer to head → larger lr
+            lr = top_lr * (decay ** (depth-1))
+            dec = [p for p in blk_params if p.ndim >= 2]
+            nde = [p for p in blk_params if p.ndim < 2]
+            if dec: groups.append({"params": dec, "lr": lr, "weight_decay": 0.05})
+            if nde: groups.append({"params": nde, "lr": lr, "weight_decay": 0.0})
+
+    # final norm
+    if hasattr(model.backbone, "norm"):
+        norm_params = [p for p in model.backbone.norm.parameters() if p.requires_grad]
+        if norm_params:
+            groups.append({"params": norm_params, "lr": top_lr, "weight_decay": 0.0})
+
+    return groups
 
 def main(cfg_path='config.yaml'):
     cfg = yaml.safe_load(open(cfg_path))
@@ -309,12 +371,21 @@ def main(cfg_path='config.yaml'):
     #model = Regressor().to(device)
     #Dinov3
     model = DinoV3RegressorLoRA(
-        freeze_backbone=True,
-        lora_rank=8, lora_alpha=16, lora_dropout=0.05,
-        lora_last_blocks=6, lora_include_mlp=False,
+        freeze_backbone=False,             # allow partial unfreeze
+        unfreeze_last_blocks=2,            # start with 1–2, can try 3
+        unfreeze_final_norm=True,
+        lora_rank=16, lora_alpha=32,
+        lora_last_blocks=8, lora_include_mlp=True,
         pool_mode="avg+cls", t_head_scale=0.1,
     ).to(device)
 
+    for n,m in model.backbone.named_modules():
+        if isinstance(m, nn.LayerNorm):
+            m.weight.requires_grad_(True)
+            m.bias.requires_grad_(True)
+    for n,p in model.backbone.named_parameters():
+        if n.endswith(".bias"):
+            p.requires_grad_(True)
 
 
     # Add this line:
@@ -323,14 +394,14 @@ def main(cfg_path='config.yaml'):
         model = torch.nn.DataParallel(model)
     
     #Restnet18
-    opt = torch.optim.AdamW(model.parameters(),
-                            lr=cfg['optim']['lr'],
-                            weight_decay=cfg['optim']['weight_decay'])
+    # opt = torch.optim.AdamW(model.parameters(),
+    #                         lr=cfg['optim']['lr'],
+    #                         weight_decay=cfg['optim']['weight_decay'])
     #DinoV3
-    # opt = torch.optim.AdamW(
-    #     trainable_param_groups(model, base_lr=cfg['optim']['lr'], lora_lr=1e-4, wd=0.05),
-    #     betas=(0.9, 0.999),
-    # )
+    opt = torch.optim.AdamW(
+        trainable_param_groups_more(model, head_lr=1e-5, lora_lr=1e-4, bb_lr=5e-6),
+        betas=(0.9, 0.999)
+    )
 
     best_key = cfg.get('train_io', {}).get('model_select_key', 'loss')  # 'ADDn' if you use it
     best_val = float('inf')
