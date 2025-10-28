@@ -19,23 +19,25 @@ def _from_uint8(img_u8):
     return (img_u8.astype(np.float32)) / 255.0
 
 def scale_K(K, src_size, dst_size):
+    
     H, W   = src_size
     H2, W2 = dst_size
-    sx = W2 / W
-    sy = H2 / H
-    K_out = K.copy()
-    if K_out.ndim == 2:  # [3,3]
-        K_out[0,0] *= sx  # fx
-        K_out[1,1] *= sy  # fy
-        K_out[0,2] *= sx  # cx
-        K_out[1,2] *= sy  # cy
-        K_out[0,1] *= sx  # skew (u scales with width)
-    else:                 # [B,3,3]
-        K_out[:,0,0] *= sx
-        K_out[:,1,1] *= sy
-        K_out[:,0,2] *= sx
-        K_out[:,1,2] *= sy
-        K_out[:,0,1] *= sx
+    if (H =! H2 and W =! W2):
+        sx = W2 / W
+        sy = H2 / H
+        K_out = K.copy()
+        if K_out.ndim == 2:  # [3,3]
+            K_out[0,0] *= sx  # fx
+            K_out[1,1] *= sy  # fy
+            K_out[0,2] *= sx  # cx
+            K_out[1,2] *= sy  # cy
+            K_out[0,1] *= sx  # skew (u scales with width)
+        else:                 # [B,3,3]
+            K_out[:,0,0] *= sx
+            K_out[:,1,1] *= sy
+            K_out[:,0,2] *= sx
+            K_out[:,1,2] *= sy
+            K_out[:,0,1] *= sx
     return K_out
 
 class TripletDataset(Dataset):
@@ -98,8 +100,8 @@ class TripletDataset(Dataset):
         M_np  = imageio.imread(mpath)       # (H,W) or (H,W,1/3)
 
         H, W = I_np.shape[:2]
-        #Hs, Ws = self._decide_size(H, W)
-        Hs, Ws = (224,224)
+        Hs, Ws = self._decide_size(H, W)
+        #Hs, Ws = (224,224)
 
         # --- Resize ---
         # cv2.resize expects (width, height)
