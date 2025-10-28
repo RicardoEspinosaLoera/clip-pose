@@ -56,7 +56,7 @@ class TripletDataset(Dataset):
         train: bool = True,
         transform = None,                      # optional extra transform after resizing (expects [C,H,W] float [0,1])
         strict_tz: bool = True,                # kept for compatibility (unused)
-        downsample: Union[int, Tuple[int,int]] = 2,
+        downsample: Union[int, Tuple[int,int]] = 1,
         out_size: Optional[Tuple[int,int]] = None,
         normalize_from_backbone = None,        # callable built via build_backbone_transform(backbone)
         return_d_obj: bool = False,            # if your JSON has object diameter in meters
@@ -98,7 +98,8 @@ class TripletDataset(Dataset):
         M_np  = imageio.imread(mpath)       # (H,W) or (H,W,1/3)
 
         H, W = I_np.shape[:2]
-        Hs, Ws = self._decide_size(H, W)
+        #Hs, Ws = self._decide_size(H, W)
+        Hs, Ws = (224,224)
 
         # --- Resize ---
         # cv2.resize expects (width, height)
@@ -116,30 +117,20 @@ class TripletDataset(Dataset):
         try:
             cam = meta['camera']
             clip_world = meta['clip']['pose_world']
+            clip_se3 = meta['clip']['pose_se3']
 
-            R_wc, t_wc = world_to_camera_from_vtk(
-                cam["position"], cam["focal_point"], cam["view_up"]
-            )  # torch [3,3], [3]
+            R_wc, t_wc = world_to_camera_from_vtk(cam["position"], cam["focal_point"], cam["view_up"])
 
             q = np.asarray(clip_world["quaternion_wxyz"], dtype=np.float32)
-            R_ow = torch.from_numpy(quat_wxyz_to_R(q)).float()     # [3,3]
+            R_ow = torch.from_numpy(quat_wxyz_to_R(q)).float()       # [3,3]
             t_ow = torch.tensor(clip_world["translation_m"], dtype=torch.float32)  # [3]
 
-            # Object -> Camera
-            R_oc = R_wc @ R_ow
-            t_oc = (R_wc @ t_ow) + t_wc
+            # --- 3) Compose Object → Camera
+            R_oc = torch.matmul(R_wc, R_ow)                        # [1,3,3]
+            t_oc = torch.matmul(R_wc, t_ow) + t_wc      # [1,3]
 
-            # Intrinsics scaled to (Hs, Ws)
-            K = kaolin_cam_to_K(cam, image_size=(W, H))            # np[3,3]
+            K = kaolin_cam_to_K(cam, image_size=(W, H))
             K_use = scale_K(K, (H, W), (Hs, Ws))
-
-            # Optional object diameter
-            D_obj = None
-            if self.return_d_obj:
-                node = meta
-                for key in self.d_obj_json_path:
-                    node = node[key]
-                D_obj = float(node)  # meters
         except Exception as e:
             raise RuntimeError(f"[{os.path.basename(jpath)}] compose_camera_object failed: {e}")
 
