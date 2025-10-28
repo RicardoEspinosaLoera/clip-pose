@@ -90,14 +90,21 @@ def reproj_rms(P_obj: torch.Tensor,
 def load_model(arch: str, ckpt: str, device: str):
     if arch == "regressor":
         model = Regressor().to(device)
+
     elif arch == "dinov3":
-        model = DinoV3Regressor(unfreeze_last_blocks=1, freeze_backbone=False).to(device)
-        
+        # plain DINOv3 (no LoRA)
+        from src.models_dinov3 import DinoV3Regressor
+        model = DinoV3Regressor(
+            freeze_backbone=False,
+            unfreeze_last_blocks=1,
+            unfreeze_final_norm=True,
+        ).to(device)
+
     elif arch == "dinov3_lora":
-        #model = DinoV3RegressorLoRA(unfreeze_last_blocks=1, freeze_backbone=False).to(device)
+        # DINOv3 + LoRA (must match how the ckpt was trained)
         model = DinoV3RegressorLoRA(
-            freeze_backbone=False,             # allow partial unfreeze
-            unfreeze_last_blocks=2,            # start with 1–2, can try 3
+            freeze_backbone=False,
+            unfreeze_last_blocks=2,
             unfreeze_final_norm=True,
             lora_rank=16, lora_alpha=32,
             lora_last_blocks=8, lora_include_mlp=True,
@@ -108,10 +115,39 @@ def load_model(arch: str, ckpt: str, device: str):
 
     print(f"Loading checkpoint: {ckpt}")
     state = torch.load(ckpt, map_location=device)
-    sd = state["model_state"] if isinstance(state, dict) and "model_state" in state else state
-    model.load_state_dict(sd, strict=True)
+
+    # find the actual tensor dict inside common wrappers
+    candidates = ["model_state", "state_dict", "model", "ema_state_dict", "net"]
+    if isinstance(state, dict):
+        for k in candidates:
+            if k in state and isinstance(state[k], dict):
+                sd = state[k]
+                break
+        else:
+            # maybe the dict itself is already a state_dict
+            sd = state
+    else:
+        # sometimes checkpoints are saved as raw OrderedDict
+        sd = state
+
+    # strip "module." prefixes if present
+    new_sd = {}
+    for k, v in sd.items():
+        if k.startswith("module."):
+            new_sd[k[len("module."):]] = v
+        else:
+            new_sd[k] = v
+
+    # finally load
+    missing, unexpected = model.load_state_dict(new_sd, strict=False)
+    if missing or unexpected:
+        print("[WARN] Non-strict load diff:")
+        if missing:   print("  Missing:",   missing[:10], ("...+%d more" % (len(missing)-10) if len(missing) > 10 else ""))
+        if unexpected:print("  Unexpected:",unexpected[:10], ("...+%d more" % (len(unexpected)-10) if len(unexpected) > 10 else ""))
+
     model.eval()
     return model
+
 
 
 # ------------------------------
@@ -263,6 +299,7 @@ def main():
             w.writeheader()
             for row in per_sample:
                 w.writerow(row)
+
         print(f"Per-sample results written to: {out_csv}")
     except Exception as e:
         print(f"[WARN] Could not write CSV: {e}")
