@@ -159,7 +159,5 @@ class TripletDataset(Dataset):
             'stem': os.path.basename(stem),
         }
 
-        if self.return_d_obj:
-            sample['D_obj'] = torch.tensor(D_obj, dtype=torch.float32)
 
         return sample
