@@ -505,7 +505,7 @@ def pose_loss2(
 
 def pose_loss_regression(
     R_pred, t_pred, R_gt, t_gt, D_obj,
-    λR: float = 0.7, λt: float = 0.5
+    λR: float = 0.5, λt: float = 0.5
 ):
     """
     Regression-only pose loss: geodesic rotation + normalized translation.
