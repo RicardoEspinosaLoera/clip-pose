@@ -349,7 +349,7 @@ def main(cfg_path='config.yaml'):
         cfg['data']['train_root'],
         train=True,
         transform=train_tf,                   # color/geom augments
-        downsample=2,                         # or out_size=(272,400)
+        downsample=1,                         # or out_size=(272,400)
         normalize_from_backbone=normalize_tf, # normalize + resize to 224×224
         return_d_obj=True                     # if JSON has object diameter
     )
