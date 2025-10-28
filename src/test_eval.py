@@ -91,7 +91,15 @@ def load_model(arch: str, ckpt: str, device: str):
     if arch == "regressor":
         model = Regressor().to(device)
     elif arch == "dinov3":
-        model = DinoV3Regressor(unfreeze_last_blocks=1, freeze_backbone=False).to(device)
+        #model = DinoV3Regressor(unfreeze_last_blocks=1, freeze_backbone=False).to(device)
+        model = DinoV3RegressorLoRA(
+            freeze_backbone=False,             # allow partial unfreeze
+            unfreeze_last_blocks=2,            # start with 1–2, can try 3
+            unfreeze_final_norm=True,
+            lora_rank=16, lora_alpha=32,
+            lora_last_blocks=8, lora_include_mlp=True,
+            pool_mode="avg+cls", t_head_scale=0.1,
+        ).to(device)
     elif arch == "dinov3_lora":
         model = DinoV3RegressorLoRA(unfreeze_last_blocks=1, freeze_backbone=False).to(device)
     else:
