@@ -411,8 +411,6 @@ def pose_loss2(
     λmask=1.0, λbce=1.0, λdice=0.5, λedge=0.0,
     mask_downsample=1, z_min=1e-2, z_max=None,
     make_vis=True,
-    anchor_fill=0.85,       # NEW: margin used by FOV-fit
-    anchor_alpha=0.0        # NEW: blend between anchor and prediction (0..1)
 ):
     # --- base pose losses (as before) ---
     L_R = rot_geodesic_loss(R_pred, R_gt)
@@ -465,7 +463,7 @@ def pose_loss2(
     sil_eff = sil_hat * has_fg
     M_eff   = M_use   * has_fg
 
-    #sil_eff  = F.interpolate(sil_hat.float(),  size=(Hs, Ws), mode='bilinear', align_corners=False).clamp(0,1) if mask_downsample>1 else M.float()
+    sil_eff  = F.interpolate(sil_hat.float(),  size=(Hs, Ws), mode='bilinear', align_corners=False).clamp(0,1) if mask_downsample>1 else M.float()
 
     if λmask > 0.0 and has_fg.any():
         bce_val  = F.binary_cross_entropy(sil_eff.clamp(1e-6,1-1e-6), M_eff)
@@ -484,7 +482,6 @@ def pose_loss2(
         'mask_bce': bce_val.detach(),
         'mask_dice': dice_val.detach(),
         'mask_edge': edge_val.detach(),
-        'anchor_alpha': torch.tensor(anchor_alpha, device=R_pred.device)
     }
 
     if not make_vis:
