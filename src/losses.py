@@ -31,6 +31,7 @@ def composite(rgb, bg, sil):
     bg  = _ensure_nchw(bg).float().clamp(0,1)
     sil = _ensure_nchw(sil).float()
     if sil.shape[1] != 1:   # keep 1-channel alpha
+        sil = sil[:, :1, ...]
     if sil.max() > 1.5:     # 0/255 → 0/1
         sil = F.interpolate(sil, size=(H, W), mode='bilinear', align_corners=False).clamp(0,1)
     # stats (debug)
@@ -39,7 +40,7 @@ def composite(rgb, bg, sil):
     #print(f"[composite] sil min/mean/max: {smin:.4f}/{sme:.4f}/{smax:.4f} | rgb_mean_inside: {r_in:.4f}")
 
      return sil * rgb + (1.0 - sil) * bg
-     
+
 @torch.no_grad()
 def composite_minimal(
     rgb_srgb, bg_srgb, sil, *,
