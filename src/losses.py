@@ -26,14 +26,22 @@ def composite(rgb, bg, sil):
     rgb: rendered clip (B,3,Hr,Wr) in [0,1]
     bg:  your real image (B,3,H,W) in [0,1]
     sil: silhouette alpha (B,1,*,*) in [0,1] or {0,255}
-    returns: (B,3,H,W)"""
+    returns: (B,3,H,W)
+    """
     rgb = _ensure_nchw(rgb).float().clamp(0,1)
     bg  = _ensure_nchw(bg).float().clamp(0,1)
     sil = _ensure_nchw(sil).float()
     if sil.shape[1] != 1:   # keep 1-channel alpha
         sil = sil[:, :1, ...]
     if sil.max() > 1.5:     # 0/255 → 0/1
+        sil = sil / 255.0
+
+    H, W = bg.shape[-2:]
+    if rgb.shape[-2:] != (H, W):
+        rgb = F.interpolate(rgb, size=(H, W), mode='bilinear', align_corners=False)
+    if sil.shape[-2:] != (H, W):
         sil = F.interpolate(sil, size=(H, W), mode='bilinear', align_corners=False).clamp(0,1)
+
     # stats (debug)
     smin, sme, smax = sil.min().item(), sil.mean().item(), sil.max().item()
     r_in  = rgb[sil.expand_as(rgb) > 0.5].mean().item() if (sil > 0.5).any() else float('nan')
@@ -432,6 +440,7 @@ def pose_loss2(
     λmask=1.0, λbce=1.0, λdice=0.5, λedge=0.0,
     mask_downsample=1, z_min=1e-2, z_max=None,
     make_vis=True,
+    anchor_fill=0.85,       # NEW: margin used by FOV-fit
 ):
     # --- base pose losses (as before) ---
     L_R = rot_geodesic_loss(R_pred, R_gt)
@@ -455,7 +464,8 @@ def pose_loss2(
         K_use = K
         scaled = False
 
-    #renderer kaolin
+    #rgb_hat, sil_hat = renderer(R_gt, t_gt, K, image_size=(H,W))
+    #with torch.no_grad():
     rgb_hat, sil_hat = renderer(R_pred, t_pred, K_use, image_size=(Hs,Ws))
     
     sil_hat = sil_hat.float().clamp(0,1)  # (B,1,Hs,Ws)   
@@ -466,25 +476,11 @@ def pose_loss2(
     dice_val = torch.tensor(0., device=R_pred.device)
     edge_val = torch.tensor(0., device=R_pred.device)
 
-    # Ensure M_use is a single-channel binary mask in [0,1]
-    if M_use.shape[1] == 3:  # RGB → grayscale
-        # average or luminance; mean works fine for masks
-        M_use = M_use.mean(dim=1, keepdim=True)
-
-    # Clamp to [0,1] just in case and make binary
-    M_use = M_use.clamp(0, 1)
-    M_use = (M_use > 0.5).float()   # threshold at 0.5, adjust if needed
-
-    # Repeat the same for sil_hat if it has 3 channels
-    if sil_hat.shape[1] == 3:
-        sil_hat = sil_hat.mean(dim=1, keepdim=True).clamp(0,1)
-        sil_hat = (sil_hat > 0.5).float()
-
     has_fg = (M_use.sum(dim=(1,2,3)) > 10).float().view(-1,1,1,1)
     sil_eff = sil_hat * has_fg
     M_eff   = M_use   * has_fg
 
-    sil_eff  = F.interpolate(sil_hat.float(),  size=(Hs, Ws), mode='bilinear', align_corners=False).clamp(0,1) if mask_downsample>1 else M.float()
+    #sil_eff  = F.interpolate(sil_hat.float(),  size=(Hs, Ws), mode='bilinear', align_corners=False).clamp(0,1) if mask_downsample>1 else M.float()
 
     if λmask > 0.0 and has_fg.any():
         bce_val  = F.binary_cross_entropy(sil_eff.clamp(1e-6,1-1e-6), M_eff)
@@ -510,8 +506,6 @@ def pose_loss2(
 
     # ---- visuals (downsampled or upsample back) ----
     I_comp  = composite(rgb_hat, BG_use, sil_eff)
-    #I_comp = composite(rgb_hat, BG_use, sil_eff, premultiplied=True, bleed_iters=1, harden_gamma=0.9)
-    #I_comp = composite_minimal(rgb_hat, BG_use, sil_eff, fg_is_premultiplied=True)
     overlay = overlay_mask_on_image(BG_use, sil_eff, color=(0,1,0), alpha=0.6, outline_px=2)
 
     if mask_downsample > 1:
