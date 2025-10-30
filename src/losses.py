@@ -39,7 +39,7 @@ def composite(rgb, bg, sil):
     r_in  = rgb[sil.expand_as(rgb) > 0.5].mean().item() if (sil > 0.5).any() else float('nan')
     #print(f"[composite] sil min/mean/max: {smin:.4f}/{sme:.4f}/{smax:.4f} | rgb_mean_inside: {r_in:.4f}")
 
-     return sil * rgb + (1.0 - sil) * bg
+    return sil * rgb + (1.0 - sil) * bg
 
 @torch.no_grad()
 def composite_minimal(
