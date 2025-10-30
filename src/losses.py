@@ -21,6 +21,26 @@ def _ensure_nchw(x):
     return x
 
 @torch.no_grad()
+def composite(rgb, bg, sil):
+    """
+    rgb: rendered clip (B,3,Hr,Wr) in [0,1]
+    bg:  your real image (B,3,H,W) in [0,1]
+    sil: silhouette alpha (B,1,*,*) in [0,1] or {0,255}
+    returns: (B,3,H,W)"""
+    rgb = _ensure_nchw(rgb).float().clamp(0,1)
+    bg  = _ensure_nchw(bg).float().clamp(0,1)
+    sil = _ensure_nchw(sil).float()
+    if sil.shape[1] != 1:   # keep 1-channel alpha
+    if sil.max() > 1.5:     # 0/255 → 0/1
+        sil = F.interpolate(sil, size=(H, W), mode='bilinear', align_corners=False).clamp(0,1)
+    # stats (debug)
+    smin, sme, smax = sil.min().item(), sil.mean().item(), sil.max().item()
+    r_in  = rgb[sil.expand_as(rgb) > 0.5].mean().item() if (sil > 0.5).any() else float('nan')
+    #print(f"[composite] sil min/mean/max: {smin:.4f}/{sme:.4f}/{smax:.4f} | rgb_mean_inside: {r_in:.4f}")
+
+     return sil * rgb + (1.0 - sil) * bg
+     
+@torch.no_grad()
 def composite_minimal(
     rgb_srgb, bg_srgb, sil, *,
     fg_is_premultiplied=True,   # set True if your renderer multiplies rgb by alpha
@@ -488,9 +508,9 @@ def pose_loss2(
         return loss, logs
 
     # ---- visuals (downsampled or upsample back) ----
-    #I_comp  = composite(rgb_hat, BG_use, sil_eff)
+    I_comp  = composite(rgb_hat, BG_use, sil_eff)
     #I_comp = composite(rgb_hat, BG_use, sil_eff, premultiplied=True, bleed_iters=1, harden_gamma=0.9)
-    I_comp = composite_minimal(rgb_hat, BG_use, sil_eff, fg_is_premultiplied=True)
+    #I_comp = composite_minimal(rgb_hat, BG_use, sil_eff, fg_is_premultiplied=True)
     overlay = overlay_mask_on_image(BG_use, sil_eff, color=(0,1,0), alpha=0.6, outline_px=2)
 
     if mask_downsample > 1:
