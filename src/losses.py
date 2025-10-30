@@ -480,7 +480,7 @@ def pose_loss2(
     sil_eff = sil_hat * has_fg
     M_eff   = M_use   * has_fg
 
-    #sil_eff  = F.interpolate(sil_hat.float(),  size=(Hs, Ws), mode='bilinear', align_corners=False).clamp(0,1) if mask_downsample>1 else M.float()
+    sil_eff  = F.interpolate(sil_hat.float(),  size=(Hs, Ws), mode='bilinear', align_corners=False).clamp(0,1) if mask_downsample>1 else M.float()
 
     if λmask > 0.0 and has_fg.any():
         bce_val  = F.binary_cross_entropy(sil_eff.clamp(1e-6,1-1e-6), M_eff)
