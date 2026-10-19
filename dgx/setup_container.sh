@@ -4,7 +4,7 @@
 #     - image already has torch >= 2.3 with CUDA and python >= 3.9 (NGC)  -> kept, the rest is installed on top
 #     - python >= 3.9 without a usable torch                              -> venv .venv/ + torch + requirements
 #     - python < 3.9 (old images)                                         -> Miniforge in /opt/miniforge, env "realac" (python 3.10) + torch + requirements
-#     torch build follows the HOST DRIVER: >= 525 -> torch 2.11 cu128; 450-524 -> torch 2.7.1 cu118 (CUDA 11 minor-version compatibility)
+#     torch build follows the HOST DRIVER: >= 525 -> torch 2.11 cu128; 450-524 -> torch 2.6.0 cu118 (last cu118 build; CUDA 11 minor-version compatibility)
 #   USE_SYSTEM_TORCH=1 / FORCE_VENV=1 / MINIFORGE=1  # force one route
 # Afterwards every dgx/*.sh script picks .venv/bin/python automatically (dgx/env.sh).
 set -euo pipefail
@@ -27,7 +27,7 @@ echo "   python $($SYS_PY --version 2>&1 | cut -d' ' -f2) | $(uname -m) | pip $(
 DRV=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1 | cut -d. -f1)
 if [ -n "$DRV" ] && [ "$DRV" -lt 525 ]; then
     [ "$DRV" -ge 450 ] || { echo "   driver $DRV is too old for any supported torch build (needs >= 450)"; exit 1; }
-    TORCH_SPEC="torch==2.7.1 torchvision==0.22.1"; TORCH_INDEX="https://download.pytorch.org/whl/cu118"; TORCH_LOOSE="torch==2.7.* torchvision"
+    TORCH_SPEC="torch==2.6.0 torchvision==0.21.0"; TORCH_INDEX="https://download.pytorch.org/whl/cu118"; TORCH_LOOSE="torch==2.6.* torchvision"   # 2.6.0 = last cu118 build
 else
     TORCH_SPEC="torch==2.11.0 torchvision==0.26.0"; TORCH_INDEX="https://download.pytorch.org/whl/cu128"; TORCH_LOOSE="torch torchvision"
 fi

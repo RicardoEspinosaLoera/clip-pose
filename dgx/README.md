@@ -128,8 +128,8 @@ Variables de la receta del generador (`TOOL_PROB`, `CLIP_FRAC_*`, `AVOID_*`, `DI
 
 ## 7. Problemas conocidos
 
-- Driver viejo en el host (`nvidia-smi` cabecera: p. ej. 465.19, CUDA 11.3): las ruedas cu12x no cargan. `setup_container.sh` lo detecta y usa torch 2.7.1 con CUDA 11.8 (funciona en drivers ≥ 450 por compatibilidad de versión menor); el resto de dependencias es el mismo.
-- Imagen vieja con Python 3.8 (p. ej. torch 1.12 + cu113): `setup_container.sh` instala Miniforge en `/opt/miniforge` con un entorno `realac` (Python 3.10) y los scripts lo usan solos. Alternativa: contenedor nuevo desde `pytorch/pytorch:2.7.1-cuda11.8-cudnn9-devel` (driver viejo) o `nvcr.io/nvidia/pytorch:25.04-py3` (driver ≥ 525), clonar dentro y correr el setup.
+- Driver viejo en el host (`nvidia-smi` cabecera: p. ej. 465.19, CUDA 11.3): las ruedas cu12x no cargan. `setup_container.sh` lo detecta y usa torch 2.6.0 con CUDA 11.8, la última build cu118 (funciona en drivers ≥ 450 por compatibilidad de versión menor); el resto de dependencias es el mismo.
+- Imagen vieja con Python 3.8 (p. ej. torch 1.12 + cu113): `setup_container.sh` instala Miniforge en `/opt/miniforge` con un entorno `realac` (Python 3.10) y los scripts lo usan solos. Alternativa: contenedor nuevo desde `pytorch/pytorch:2.6.0-cuda11.8-cudnn9-devel` (driver viejo) o `nvcr.io/nvidia/pytorch:25.04-py3` (driver ≥ 525), clonar dentro y correr el setup.
 
 - `start_xvfb failed` o ventana VTK vacía: falta `xvfb` o Mesa; en Docker ya vienen. Alternativa sin X: `pip install --extra-index-url https://wheels.vtk.org vtk-osmesa` si existe la versión 9.6.
 - `DataLoader worker killed`: subir `--shm-size` del contenedor o bajar `WORKERS`.
