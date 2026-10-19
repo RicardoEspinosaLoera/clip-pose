@@ -104,7 +104,7 @@ pl.close()
 print("   head-less VTK render OK", img.shape)
 EOF
 shm=$(df -m /dev/shm 2>/dev/null | awk 'NR==2{print $2}')
-cpus=$(nproc)
+cpus=$(getconf _NPROCESSORS_ONLN)        # not nproc: it honours OMP_NUM_THREADS, which env.sh sets to 8
 echo "   /dev/shm ${shm:-?} MB (DataLoader workers want >= 8 GB; if smaller: restart the container with --ipc=host, or train with WORKERS=0)"
 echo "   cpus $cpus, gpus $NGPU  ->  suggested: SHARDS=$(( cpus / 8 > 1 ? cpus / 8 : 1 )) LP_NUM_THREADS=8 for 10_generate.sh"
 echo "   models offline: $([ -d "$HF_HOME/hub/models--IDEA-Research--grounding-dino-tiny" ] && echo GroundingDINO ok || echo 'GroundingDINO MISSING in models/hf')"
