@@ -1,17 +1,24 @@
 """
-annotate_tool.py — minimal annotation GUI for the real evaluation frames (protocol section 3).
+annotate_tool.py — manual annotation of the real evaluation frames (protocol section 3).
 
-Per frame: a clip bounding box (2 clicks), three keypoints (jaw tip, spring end, coil centre),
-and four attributes (held by applier, jaws open, partially occluded, blurry). One JSON per frame
-in real_eval/annotations/<annotator>/<frame>.json; resumable; the detector box is shown as a hint.
+Per frame: a clip bounding box, three keypoints (jaw TIP = midpoint of the two jaw tips,
+SPRING end, COIL centre) and four attributes (held by applier, jaws open, partially occluded,
+blurry). One JSON per frame in real_eval/annotations/<annotator>/<frame>.json; resumable.
+
+Workflow per frame
+  1. The detector box is PRE-LOADED (yellow). If it is right, go on; if not, press `c` and
+     click two opposite corners of the clip box.
+  2. The view ZOOMS onto the box automatically. Click TIP, SPRING, COIL (points are always
+     marked by hand: never pre-filled, to avoid anchoring bias).
+  3. Toggle the attributes, then `n` to save and go to the next frame.
 
 Keys
-  left click   : place the next point (box corner 1, box corner 2, tip, spring, coil)
-  u            : undo last point          r : reset frame
-  h / o / p / b: toggle held / open / occluded / blurry
-  n / space    : save and next            p (prev) : BACKSPACE
-  q            : save and quit
-Usage: python annotate_tool.py --annotator ricardo [--start 0]
+  left click : next point            u : undo last point       r : reset frame (box pre-loaded again)
+  c          : clear box, click a new one                      z : toggle zoom / full frame
+  x          : coil centre not visible (skips the third point)
+  h / o / p / b : held / open / occluded / blurry
+  n or space : save + next           BACKSPACE : save + previous           q : save + quit
+Usage: python annotate_tool.py --annotator ricardo [--start 0] [--no-prefill]
 """
 
 import os
@@ -23,40 +30,81 @@ import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.normpath(os.path.join(HERE, "..", "real_eval"))
-STEPS = ["box corner 1", "box corner 2", "jaw TIP", "SPRING end", "COIL centre"]
-VIEW_W = 1600
+STEPS = ["box corner 1", "box corner 2", "jaw TIP (free end of the jaws)", "BACK end (spring / where the applier grips)",
+         "COIL centre (x = not visible)"]
+COLS = [(0, 255, 255), (0, 255, 255), (0, 0, 255), (255, 0, 255), (255, 128, 0)]
+VIEW_W, VIEW_H = 1600, 900
+ZOOM_MARGIN = 2.2          # zoom window = box size x margin (keeps context around the clip)
 
 
 class State:
-    def __init__(self):
-        self.pts, self.attrs = [], dict(held=False, open=False, occluded=False, blurry=False)
-        self.zoom_box = None
+    def __init__(self, hint=None, prefill=True):
+        self.pts = []
+        self.attrs = dict(held=False, open=False, occluded=False, blurry=False)
+        if prefill and hint is not None:
+            x, y, w, h = hint
+            self.pts = [(float(x), float(y)), (float(x + w), float(y + h))]
+        self.zoom = True
 
 
-def draw(img, st, hint, name, idx, total):
-    vis = img.copy()
-    if hint is not None:
-        x, y, w, h = hint
-        cv2.rectangle(vis, (x, y), (x + w, y + h), (80, 80, 80), 1)
-    cols = [(0, 255, 255), (0, 255, 255), (0, 0, 255), (255, 0, 255), (255, 128, 0)]
-    for i, p in enumerate(st.pts):
-        cv2.circle(vis, (int(p[0]), int(p[1])), 5, cols[i], -1)
-    if len(st.pts) >= 2:
+def view_transform(st, W, H):
+    """Affine (scale s, offset ox, oy): view = (img - o) * s. Zoom on the box once it exists."""
+    if st.zoom and len(st.pts) >= 2:
         (x0, y0), (x1, y1) = st.pts[0], st.pts[1]
-        cv2.rectangle(vis, (int(x0), int(y0)), (int(x1), int(y1)), (0, 255, 255), 2)
+        cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+        bw, bh = max(abs(x1 - x0), 20), max(abs(y1 - y0), 20)
+        cw = max(bw * ZOOM_MARGIN, bh * ZOOM_MARGIN * VIEW_W / VIEW_H, 240)
+        s = VIEW_W / cw
+        return s, cx - (VIEW_W / 2) / s, cy - (VIEW_H / 2) / s
+    s = min(VIEW_W / W, VIEW_H / H)
+    return s, 0.0, 0.0
+
+
+def render(img, st, name, idx, total):
+    H, W = img.shape[:2]
+    s, ox, oy = view_transform(st, W, H)
+    A = np.array([[s, 0, -ox * s], [0, s, -oy * s]], np.float64)
+    vis = cv2.warpAffine(img, A, (VIEW_W, VIEW_H), flags=cv2.INTER_CUBIC if s > 1 else cv2.INTER_AREA,
+                         borderMode=cv2.BORDER_CONSTANT, borderValue=(40, 40, 40))
+
+    def P(p):
+        return int(round((p[0] - ox) * s)), int(round((p[1] - oy) * s))
+    if len(st.pts) >= 2:
+        cv2.rectangle(vis, P(st.pts[0]), P(st.pts[1]), (0, 255, 255), 1)
     if len(st.pts) >= 4:
-        cv2.line(vis, (int(st.pts[2][0]), int(st.pts[2][1])), (int(st.pts[3][0]), int(st.pts[3][1])), (255, 255, 255), 1)
-    nxt = STEPS[len(st.pts)] if len(st.pts) < len(STEPS) else "done: n = next"
-    txt = f"[{idx + 1}/{total}] {name} | next: {nxt} | held(h)={int(st.attrs['held'])} open(o)={int(st.attrs['open'])} occl(p)={int(st.attrs['occluded'])} blur(b)={int(st.attrs['blurry'])}"
-    cv2.rectangle(vis, (0, 0), (vis.shape[1], 34), (0, 0, 0), -1)
-    cv2.putText(vis, txt, (8, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
-    return vis
+        cv2.line(vis, P(st.pts[2]), P(st.pts[3]), (255, 255, 255), 1)
+    for i, p in enumerate(st.pts):
+        if i < 2 or p is None:
+            continue
+        cv2.circle(vis, P(p), 7, (0, 0, 0), 3)
+        cv2.circle(vis, P(p), 7, COLS[i], 1)
+        cv2.circle(vis, P(p), 1, COLS[i], -1)
+    nxt = STEPS[len(st.pts)] if len(st.pts) < len(STEPS) else "done -> n = save + next"
+    a = st.attrs
+    l1 = f"[{idx + 1}/{total}] {name}   zoom x{s:.1f}   next: {nxt}"
+    l2 = (f"held(h)={int(a['held'])}  open(o)={int(a['open'])}  occluded(p)={int(a['occluded'])}  blurry(b)={int(a['blurry'])}"
+          f"   |  c new box  u undo  r reset  z zoom  q quit")
+    cv2.rectangle(vis, (0, 0), (VIEW_W, 56), (0, 0, 0), -1)
+    cv2.putText(vis, l1, (10, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 255, 255), 2)
+    cv2.putText(vis, l2, (10, 47), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 1)
+    return vis, (s, ox, oy)
+
+
+def load_previous(path):
+    d = json.load(open(path))
+    x, y, w, h = d["box"]
+    st = State(prefill=False)
+    st.pts = [(x, y), (x + w, y + h)] + [tuple(d["points"][k]) if d["points"].get(k) is not None else None
+                                         for k in ("tip", "spring", "coil")]
+    st.attrs = d["attrs"]
+    return st
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--annotator", required=True)
     ap.add_argument("--start", type=int, default=0)
+    ap.add_argument("--no-prefill", action="store_true", help="do not pre-load the detector box")
     a = ap.parse_args()
     frames = json.load(open(os.path.join(OUT, "frames.json")))
     out_dir = os.path.join(OUT, "annotations", a.annotator)
@@ -64,58 +112,64 @@ def main():
     idx = a.start
     while idx < len(frames) and os.path.exists(os.path.join(out_dir, frames[idx]["file"] + ".json")):
         idx += 1
-    cv2.namedWindow("annotate", cv2.WINDOW_NORMAL)
-    cv2.resizeWindow("annotate", VIEW_W, int(VIEW_W * 9 / 16))
-    st = State()
-    scale = {"s": 1.0}
+    done = sum(os.path.exists(os.path.join(out_dir, f["file"] + ".json")) for f in frames)
+    print(f"{done}/{len(frames)} frames already annotated by {a.annotator}; starting at {idx + 1}")
+    cv2.namedWindow("annotate", cv2.WINDOW_AUTOSIZE)
+    view = {"T": (1.0, 0.0, 0.0)}
+    holder = {}
 
     def on_mouse(ev, x, y, flags, _):
-        if ev == cv2.EVENT_LBUTTONDOWN and len(st.pts) < len(STEPS):
-            st.pts.append((x / scale["s"], y / scale["s"]))
+        st = holder.get("st")
+        if st is not None and ev == cv2.EVENT_LBUTTONDOWN and len(st.pts) < len(STEPS):
+            s, ox, oy = view["T"]
+            st.pts.append((x / s + ox, y / s + oy))
 
     cv2.setMouseCallback("annotate", on_mouse)
     while 0 <= idx < len(frames):
         fr = frames[idx]
         img = cv2.imread(os.path.join(OUT, "frames", fr["file"]))
         H, W = img.shape[:2]
-        scale["s"] = VIEW_W / W
-        st = State()
         prev = os.path.join(out_dir, fr["file"] + ".json")
-        if os.path.exists(prev):
-            d = json.load(open(prev))
-            st.pts = [tuple(p) for p in d["points"]]
-            st.attrs = d["attrs"]
+        hint = None if a.no_prefill else fr.get("hint_box")
+        st = load_previous(prev) if os.path.exists(prev) else State(hint)
+        holder["st"] = st
         while True:
-            vis = draw(img, st, fr.get("hint_box"), fr["file"], idx, len(frames))
-            cv2.imshow("annotate", cv2.resize(vis, (VIEW_W, int(H * scale["s"]))))
+            vis, view["T"] = render(img, st, fr["file"], idx, len(frames))
+            cv2.imshow("annotate", vis)
             k = cv2.waitKey(30) & 0xFF
             if k == ord("u") and st.pts:
                 st.pts.pop()
             elif k == ord("r"):
-                st = State()
-            elif k == ord("h"):
-                st.attrs["held"] = not st.attrs["held"]
-            elif k == ord("o"):
-                st.attrs["open"] = not st.attrs["open"]
-            elif k == ord("p"):
-                st.attrs["occluded"] = not st.attrs["occluded"]
-            elif k == ord("b"):
-                st.attrs["blurry"] = not st.attrs["blurry"]
+                st = State(hint)
+                holder["st"] = st
+            elif k == ord("c"):
+                st.pts = []
+            elif k == ord("x") and len(st.pts) == 4:
+                st.pts.append(None)
+            elif k == ord("z"):
+                st.zoom = not st.zoom
+            elif k in (ord("h"), ord("o"), ord("p"), ord("b")):
+                key = {ord("h"): "held", ord("o"): "open", ord("p"): "occluded", ord("b"): "blurry"}[k]
+                st.attrs[key] = not st.attrs[key]
             elif k in (ord("n"), ord(" "), ord("q"), 8):
                 if len(st.pts) == len(STEPS):
                     (x0, y0), (x1, y1) = st.pts[0], st.pts[1]
                     rec = dict(file=fr["file"], src=fr["src"], video=fr["video"], width=W, height=H,
                                box=[min(x0, x1), min(y0, y1), abs(x1 - x0), abs(y1 - y0)],
-                               points={"tip": st.pts[2], "spring": st.pts[3], "coil": st.pts[4]},
-                               attrs=st.attrs, annotator=a.annotator)
+                               points={"tip": list(st.pts[2]), "spring": list(st.pts[3]),
+                                       "coil": list(st.pts[4]) if st.pts[4] is not None else None},
+                               attrs=st.attrs, annotator=a.annotator, box_prefilled=hint is not None)
                     json.dump(rec, open(prev, "w"), indent=1)
+                elif k in (ord("n"), ord(" ")) and len(st.pts) > 2:
+                    print(f"  {fr['file']}: incomplete ({len(st.pts) - 2}/3 points), not saved")
                 if k == ord("q"):
                     cv2.destroyAllWindows()
                     return
                 idx += -1 if k == 8 else 1
                 break
     cv2.destroyAllWindows()
-    print("done")
+    done = sum(os.path.exists(os.path.join(out_dir, f["file"] + ".json")) for f in frames)
+    print(f"done: {done}/{len(frames)} frames annotated -> {out_dir}")
 
 
 if __name__ == "__main__":

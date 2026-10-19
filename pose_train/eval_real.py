@@ -69,20 +69,24 @@ def main():
         po = (pc - A[:, 2][None, :]) / s                     # back to original pixels
         kp = {n: po[i] for i, n in enumerate(names)}
         pred = dict(tip=(kp["tip_a"] + kp["tip_b"]) / 2, spring=kp["spring"], coil=kp["coil_centre"])
-        gt = {k: np.array(v, float) for k, v in ann["points"].items()}
+        gt = {k: np.array(v, float) for k, v in ann["points"].items() if v is not None}   # coil may be "not visible"
         L = float(np.linalg.norm(gt["tip"] - gt["spring"])) + 1e-6
         row = dict(file=ann["file"], video=ann.get("video", ""), L_px=L, **{f"attr_{k}": int(v) for k, v in ann["attrs"].items()})
         for k in ("tip", "spring", "coil"):
+            if k not in gt:
+                continue
             e = float(np.linalg.norm(pred[k] - gt[k]))
             row[f"{k}_px"], row[f"{k}_frac"] = e, e / L
         dp, dg = pred["tip"] - pred["spring"], gt["tip"] - gt["spring"]
         cosang = float(np.dot(dp, dg) / (np.linalg.norm(dp) * np.linalg.norm(dg) + 1e-6))
         row["axis_deg"] = float(np.degrees(np.arccos(np.clip(cosang, -1, 1))))
-        row["mean_frac"] = float(np.mean([row["tip_frac"], row["spring_frac"], row["coil_frac"]]))
+        row["mean_frac"] = float(np.mean([row[f"{k}_frac"] for k in ("tip", "spring", "coil") if f"{k}_frac" in row]))
         rows.append(row)
         if len(cells) < a.n_montage:
             vis = img.copy()
             for k, col in (("tip", (0, 0, 255)), ("spring", (255, 0, 255)), ("coil", (255, 128, 0))):
+                if k not in gt:
+                    continue
                 cv2.circle(vis, tuple(int(v) for v in gt[k]), 6, col, 2)
                 cv2.circle(vis, tuple(int(v) for v in pred[k]), 4, col, -1)
             x0, y0 = int(max(0, cx - side / 2)), int(max(0, cy - side / 2))
