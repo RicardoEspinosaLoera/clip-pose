@@ -7,6 +7,10 @@
 #   ITERS=30000 BATCH=16 WORKERS=8 FORCE=1 NOWAIT=1
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/env.sh"
+if pgrep -f "render_clip_poses_depth.py" >/dev/null 2>&1 && [ -z "${FORCE:-}" ]; then
+    echo "a generator is still running (pgrep -f render_clip_poses_depth.py): wait until logs/generate.log ends with 'generation done' (FORCE=1 to ignore)"
+    exit 1
+fi
 ITERS="${ITERS:-30000}"; BATCH="${BATCH:-16}"; WORKERS="${WORKERS:-8}"
 if [ ! -f "$DATA_OUT/splits/train.txt" ] || [ ! -f "$DATA_OUT/splits/val.txt" ]; then
     echo "no training data: $DATA_OUT/splits/train.txt missing. Run bash dgx/10_generate.sh and bash dgx/20_splits.sh first (or set DATA_OUT)."
