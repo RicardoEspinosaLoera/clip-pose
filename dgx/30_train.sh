@@ -8,6 +8,11 @@
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/env.sh"
 ITERS="${ITERS:-30000}"; BATCH="${BATCH:-16}"; WORKERS="${WORKERS:-8}"
+if [ ! -f "$DATA_OUT/splits/train.txt" ] || [ ! -f "$DATA_OUT/splits/val.txt" ]; then
+    echo "no training data: $DATA_OUT/splits/train.txt missing. Run bash dgx/10_generate.sh and bash dgx/20_splits.sh first (or set DATA_OUT)."
+    exit 1
+fi
+echo "data: $DATA_OUT ($(wc -l < "$DATA_OUT/splits/train.txt") train / $(wc -l < "$DATA_OUT/splits/val.txt") val images)"
 COMMON="--iters $ITERS --batch $BATCH --workers $WORKERS --val-every 2000 --val-batches 25"
 
 RUNS_LIST=(
@@ -26,6 +31,7 @@ done
 
 cd "$ROOT/pose_train"
 i=0
+declare -a PIDS=() NAMES=()
 for spec in "${RUNS_LIST[@]}"; do
     name="${spec%%|*}"; args="${spec#*|}"
     if [ -n "${ONLY:-}" ] && ! echo "$name" | grep -Eq "$ONLY"; then continue; fi
@@ -34,10 +40,18 @@ for spec in "${RUNS_LIST[@]}"; do
     # shellcheck disable=SC2086
     CUDA_VISIBLE_DEVICES=$gpu nohup $PY -W ignore train.py --data "$DATA_OUT" $args $COMMON --out "$RUNS/$name" \
         > "$LOGS/train_$name.log" 2>&1 &
+    PIDS+=("$!"); NAMES+=("$name")
     echo "  launched $name on gpu $gpu (pid $!): train.py --data $DATA_OUT $args $COMMON"
 done
 [ "$i" -gt 0 ] || { echo "nothing launched"; exit 0; }
 echo "$i runs launched; progress: tail -f $LOGS/train_*.log"
 [ -n "${NOWAIT:-}" ] && exit 0
-wait
-echo "training done; next: bash dgx/40_eval.sh"
+fail=0
+for j in "${!PIDS[@]}"; do
+    if wait "${PIDS[$j]}"; then
+        echo "  ok      ${NAMES[$j]}"
+    else
+        echo "  FAILED  ${NAMES[$j]}  -> tail -5 $LOGS/train_${NAMES[$j]}.log"; fail=$((fail + 1))
+    fi
+done
+[ "$fail" -eq 0 ] && echo "training done; next: bash dgx/40_eval.sh" || { echo "$fail run(s) failed"; exit 1; }

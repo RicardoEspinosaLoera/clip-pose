@@ -2,6 +2,8 @@
 # Train / val / test split by backplate (80/10/10) + nested learning-curve subsets of the train split.
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/env.sh"
+n=$(ls "$DATA_OUT"/[0-9]*.json 2>/dev/null | wc -l)
+[ "$n" -ge 10 ] || { echo "no samples in $DATA_OUT ($n json): run bash dgx/10_generate.sh first"; exit 1; }
 cd "$ROOT/pose_train"
 $PY make_splits.py --dir "$DATA_OUT" --seed "${SPLIT_SEED:-0}"
 $PY make_subsets.py --dir "$DATA_OUT" --sizes 1250 2500 --seed "${SPLIT_SEED:-0}"
