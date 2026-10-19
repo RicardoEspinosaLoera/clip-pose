@@ -13,9 +13,9 @@ for k in 0 1; do
 done
 wait
 t1=$(date +%s)
-n=$(ls "$SMOKE"/[0-9]*.json 2>/dev/null | wc -l)
+n=$(count_json "$SMOKE")
 echo "generation: $n samples in $((t1 - t0)) s with 2 shards  ->  $(( (t1 - t0) * 2 / (n > 0 ? n : 1) )) s/sample/shard"
-[ "$n" -ge 8 ] || { echo "SMOKE FAILED: generation (see $LOGS/smoke_gen*.log)"; exit 1; }
+[ "$n" -ge 8 ] || { echo "SMOKE FAILED: generation produced $n samples. Last lines of $LOGS/smoke_gen0.log:"; tail -25 "$LOGS/smoke_gen0.log"; exit 1; }
 $PY fix_pose_se3.py --dirs "$SMOKE" --dry-run | tail -3
 $PY measure_pose_fidelity.py --dir "$SMOKE" --n-montage 10 | tail -4
 $PY check_tool_clearance.py --dir "$SMOKE" --n-montage 10 | tail -4

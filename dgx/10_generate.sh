@@ -35,8 +35,9 @@ for k in $(seq 0 $((SHARDS - 1))); do
 done
 wait
 t1=$(date +%s)
-n=$(ls "$DATA_OUT"/[0-9]*.json | wc -l)
+n=$(count_json "$DATA_OUT")
 echo "saved $n / $N_TOTAL samples in $(( (t1 - t0) / 60 )) min"
+if [ "$n" -eq 0 ]; then echo "no samples produced. Last lines of $LOGS/gen_shard00.log:"; tail -25 "$LOGS/gen_shard00.log"; exit 1; fi
 grep -h "WARN\|Traceback" "$LOGS"/gen_shard*.log | sort | uniq -c | head -20 || true
 
 echo "--- validation (protocol section 2): GT reprojection, image-level pose fidelity, tool clearance, domain gap"

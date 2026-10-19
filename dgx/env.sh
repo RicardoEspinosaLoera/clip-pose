@@ -45,3 +45,4 @@ NGPU_DETECTED=$(nvidia-smi -L 2>/dev/null | wc -l | tr -d ' ')
 export NGPU="${NGPU:-${NGPU_DETECTED:-1}}"
 [ "$NGPU" -ge 1 ] || export NGPU=1
 mkdir -p "$RUNS" "$LOGS"
+count_json() { ls "$1"/[0-9]*.json 2>/dev/null | wc -l | tr -d " " || true; }   # safe under set -e / pipefail

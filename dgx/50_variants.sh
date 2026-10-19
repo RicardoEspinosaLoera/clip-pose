@@ -14,14 +14,14 @@ OUT="${DATA_OUT}_${what}"
 restyle_variant() {                       # $1 = preset
     cd "$ROOT/GT_Generator"
     SHARDS="${SHARDS:-8}"
-    n=$(ls "$DATA_OUT"/[0-9]*.json | wc -l); per=$(( (n + SHARDS - 1) / SHARDS ))
+    n=$(count_json "$DATA_OUT"); per=$(( (n + SHARDS - 1) / SHARDS ))
     for k in $(seq 0 $((SHARDS - 1))); do
         CUDA_VISIBLE_DEVICES="" $PY -W ignore restyle_appearance.py --src "$DATA_OUT" --out "$OUT" --preset "$1" --reuse-seed --no-applier \
             --start $((k * per)) --limit $per --montage "$LOGS/variant_${what}_$k.png" > "$LOGS/variant_${what}_$k.log" 2>&1 &
     done
     wait
     cp -r "$DATA_OUT/splits" "$OUT/"
-    echo "$what ($1) -> $OUT ($(ls "$OUT"/[0-9]*.json | wc -l) samples)"
+    echo "$what ($1) -> $OUT ($(count_json "$OUT") samples)"
 }
 case "$what" in
 a1) restyle_variant a1_ibl ;;
