@@ -67,6 +67,10 @@ if [ -n "${USE_SYSTEM_TORCH:-}" ]; then
     install_reqs "$PY"
 elif [ -n "${MINIFORGE:-}" ]; then
     MF="${MF:-/opt/miniforge}"
+    if [ -d "$ROOT/.venv" ] && ! "$ROOT/.venv/bin/python" -c "import torch, cv2" >/dev/null 2>&1; then
+        echo "   removing incomplete $ROOT/.venv (left by an earlier attempt) so env.sh does not pick it"
+        rm -rf "$ROOT/.venv"
+    fi
     if [ ! -x "$MF/bin/conda" ]; then
         curl -L -s -o /tmp/miniforge.sh "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-$(uname)-$(uname -m).sh"
         bash /tmp/miniforge.sh -b -p "$MF" >/dev/null
