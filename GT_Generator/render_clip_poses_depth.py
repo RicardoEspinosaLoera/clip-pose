@@ -759,7 +759,7 @@ def on_new_pose():
     state.backplate = src
     bg_src = cv2.imread(os.path.join(BG_DIR, src), cv2.IMREAD_COLOR)
     bg_aug = augment_backplate(cv2.resize(bg_src, (w, h)))
-    tmp_bg = os.path.join(OUT_DIR, "_bg_tmp.png")
+    tmp_bg = os.path.join(OUT_DIR, f"_bg_tmp_{os.getpid()}.png")   # per process: shards share OUT_DIR
     cv2.imwrite(tmp_bg, bg_aug)
     try:
         plotter.remove_background_image()
