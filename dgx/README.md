@@ -128,6 +128,15 @@ Variables de la receta del generador (`TOOL_PROB`, `CLIP_FRAC_*`, `AVOID_*`, `DI
 
 ## 7. Problemas conocidos
 
+- Imagen vieja (p. ej. torch 1.12 + cu113, Python 3.8): no hay forma de instalar el stack encima (torch ≥ 2.3, Python 3.10–3.13). Levantar un contenedor nuevo desde una imagen reciente y volver a clonar dentro:
+
+```bash
+docker run --gpus all --ipc=host -it --name clip-pose-2 -w /workspace nvcr.io/nvidia/pytorch:25.04-py3 bash   # o pytorch/pytorch:2.7.1-cuda12.6-cudnn9-devel
+git clone https://github.com/RicardoEspinosaLoera/clip-pose.git && cd clip-pose && bash dgx/setup_container.sh
+```
+
+El driver del host debe ser ≥ 525 para CUDA 12 (`nvidia-smi` lo muestra en la cabecera); con un driver 470 solo sirven ruedas cu118 (torch ≤ 2.7) y hay que pedir una variante de `requirements.txt`.
+
 - `start_xvfb failed` o ventana VTK vacía: falta `xvfb` o Mesa; en Docker ya vienen. Alternativa sin X: `pip install --extra-index-url https://wheels.vtk.org vtk-osmesa` si existe la versión 9.6.
 - `DataLoader worker killed`: subir `--shm-size` del contenedor o bajar `WORKERS`.
 - Errores de Hugging Face sin red: el paquete incluye GroundingDINO en `models/hf`; con `HF_HUB_OFFLINE=1` no se intenta descargar nada. Para A4 con internet: `HF_HUB_OFFLINE=0 huggingface-cli download diffusers/stable-diffusion-xl-1.0-inpainting-0.1` y lo mismo para `madebyollin/sdxl-vae-fp16-fix` y `diffusers/controlnet-canny-sdxl-1.0`, con `HF_HOME` apuntando a `models/hf`.
