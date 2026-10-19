@@ -60,9 +60,11 @@ Opción C, contenedor ya existente (por ejemplo `root@b87d52538c1e:/workspace/cl
 
 ```bash
 cd /workspace/clip-pose && tar xf realac_dgx_bundle_<fecha>.tar --strip-components=1
-bash dgx/setup_container.sh                      # apt: xvfb + mesa; venv .venv/ con torch 2.11 cu128 + requirements; pruebas
-# USE_SYSTEM_TORCH=1 bash dgx/setup_container.sh # alternativa: conservar el torch de la imagen (NGC) e instalar el resto encima
+bash dgx/setup_container.sh                      # apt: xvfb + mesa; si la imagen ya trae torch con CUDA (NGC) lo conserva, si no crea .venv con torch cu128; pruebas
+# USE_SYSTEM_TORCH=1 / FORCE_VENV=1              # fuerzan una de las dos rutas
 ```
+
+Si la instalación de torch falla con `from versions: none`, el script imprime la versión de Python, la arquitectura y si llega a download.pytorch.org y pypi.org: sin internet hay que usar una imagen con torch incluido (`nvcr.io/nvidia/pytorch`) o configurar `HTTPS_PROXY`; con internet pero sin rueda, la Python del contenedor no está soportada (usar 3.10–3.13).
 
 Si `/dev/shm` es pequeño (el script lo imprime), reiniciar el contenedor con `--ipc=host` o entrenar con `WORKERS=0`.
 
