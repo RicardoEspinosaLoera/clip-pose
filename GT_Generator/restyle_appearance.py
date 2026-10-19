@@ -61,7 +61,7 @@ REAL_MASKS = os.path.normpath(os.path.join(HERE, "..", "Inpaint_Realism", "lora"
 
 ENV_W, ENV_H = 256, 128
 WHITE = 1.0              # linear radiance that a white metal reflects as white
-SS = 2                   # supersampling factor
+SS = int(os.environ.get("RESTYLE_SS", 2))   # supersampling factor of the clip/applier layers (2 = paper quality; 1 = ~4x cheaper render, CPU-only hosts)
 
 # ------------------------------------------------------------------ presets
 # base = linear F0 reflectance of the metal (RGB); rough = (min,max) jitter range;
