@@ -3,8 +3,10 @@
 # Every variable can be overridden from the shell (e.g. DATA_OUT=/raid/out_v3 bash dgx/10_generate.sh).
 
 export ROOT="${ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"   # bundle root (contains GT_Generator/, pose_train/)
-if [ -z "${PY:-}" ]; then                                                      # venv made by setup_container.sh, else system python
-    if [ -x "$ROOT/.venv/bin/python" ]; then PY="$ROOT/.venv/bin/python"; else PY="$(command -v python || command -v python3)"; fi
+if [ -z "${PY:-}" ]; then                                                      # python made by setup_container.sh, else system python
+    if [ -x "$ROOT/.venv/bin/python" ]; then PY="$ROOT/.venv/bin/python"
+    elif [ -x "${MF:-/opt/miniforge}/envs/realac/bin/python" ]; then PY="${MF:-/opt/miniforge}/envs/realac/bin/python"
+    else PY="$(command -v python || command -v python3)"; fi
 fi
 export PY
 export DATA_OUT="${DATA_OUT:-$ROOT/GT_Generator/out_v3}"                     # the 5000-sample training set

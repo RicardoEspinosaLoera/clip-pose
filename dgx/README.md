@@ -128,14 +128,8 @@ Variables de la receta del generador (`TOOL_PROB`, `CLIP_FRAC_*`, `AVOID_*`, `DI
 
 ## 7. Problemas conocidos
 
-- Imagen vieja (p. ej. torch 1.12 + cu113, Python 3.8): no hay forma de instalar el stack encima (torch ≥ 2.3, Python 3.10–3.13). Levantar un contenedor nuevo desde una imagen reciente y volver a clonar dentro:
-
-```bash
-docker run --gpus all --ipc=host -it --name clip-pose-2 -w /workspace nvcr.io/nvidia/pytorch:25.04-py3 bash   # o pytorch/pytorch:2.7.1-cuda12.6-cudnn9-devel
-git clone https://github.com/RicardoEspinosaLoera/clip-pose.git && cd clip-pose && bash dgx/setup_container.sh
-```
-
-El driver del host debe ser ≥ 525 para CUDA 12 (`nvidia-smi` lo muestra en la cabecera); con un driver 470 solo sirven ruedas cu118 (torch ≤ 2.7) y hay que pedir una variante de `requirements.txt`.
+- Driver viejo en el host (`nvidia-smi` cabecera: p. ej. 465.19, CUDA 11.3): las ruedas cu12x no cargan. `setup_container.sh` lo detecta y usa torch 2.7.1 con CUDA 11.8 (funciona en drivers ≥ 450 por compatibilidad de versión menor); el resto de dependencias es el mismo.
+- Imagen vieja con Python 3.8 (p. ej. torch 1.12 + cu113): `setup_container.sh` instala Miniforge en `/opt/miniforge` con un entorno `realac` (Python 3.10) y los scripts lo usan solos. Alternativa: contenedor nuevo desde `pytorch/pytorch:2.7.1-cuda11.8-cudnn9-devel` (driver viejo) o `nvcr.io/nvidia/pytorch:25.04-py3` (driver ≥ 525), clonar dentro y correr el setup.
 
 - `start_xvfb failed` o ventana VTK vacía: falta `xvfb` o Mesa; en Docker ya vienen. Alternativa sin X: `pip install --extra-index-url https://wheels.vtk.org vtk-osmesa` si existe la versión 9.6.
 - `DataLoader worker killed`: subir `--shm-size` del contenedor o bajar `WORKERS`.
