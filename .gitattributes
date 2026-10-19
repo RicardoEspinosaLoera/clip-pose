@@ -1,0 +1,18 @@
+# keep Linux line endings for everything that runs on the DGX
+*.sh text eol=lf
+*.py text eol=lf
+*.sbatch text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.txt text eol=lf
+*.md text eol=lf
+Dockerfile text eol=lf
+*.json text eol=lf
+*.jsonl text eol=lf
+# meshes and images are binary
+*.obj binary
+*.png binary
+*.jpg binary
+*.npy binary
+*.pt binary
+*.pth binary

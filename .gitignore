@@ -1,0 +1,35 @@
+# caches / environments / logs
+__pycache__/
+*.pyc
+*.log
+logs/
+.venv/
+.claude/
+_err.txt
+*.tar
+*.zip
+
+# model weights and third-party code (downloaded or copied separately; see dgx/README.md)
+models/
+external/
+Realistic_Aneurysm_Clips-main/
+
+# generated sets, training runs, debug images
+GT_Generator/out*/
+GT_Generator/src_mv*/
+GT_Generator/_*
+GT_Generator/*.png
+GT_Generator/*.jpg
+GT_Generator/Data/clips/
+GT_Generator/Data/noclips/
+pose_train/runs/
+
+# Inpaint_Realism: keep the scripts and the real clip crops/masks used by the metrics; drop weights, latents, outputs
+Inpaint_Realism/*
+!Inpaint_Realism/*.py
+!Inpaint_Realism/lora/
+Inpaint_Realism/lora/*
+!Inpaint_Realism/lora/*.py
+!Inpaint_Realism/lora/README.md
+!Inpaint_Realism/lora/clean_clips2/
+!Inpaint_Realism/lora/clean_clips2_masks/

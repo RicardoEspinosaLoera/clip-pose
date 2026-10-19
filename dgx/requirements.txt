@@ -1,0 +1,19 @@
+# Pinned to the versions of the development environment (conda env clip_pose, 2026-10-19).
+# torch / torchvision are installed separately (see Dockerfile / install_conda.sh).
+numpy==2.2.6
+scipy==1.15.3
+opencv-python-headless==4.13.0.92
+pillow==12.2.0
+pyvista==0.48.4
+vtk==9.6.2
+matplotlib==3.10.9
+tqdm==4.68.3
+PyYAML==6.0.3
+safetensors==0.8.0
+huggingface_hub==1.19.0
+tokenizers==0.22.2
+transformers==5.12.1
+accelerate==1.14.0
+diffusers==0.38.0
+peft==0.19.1
+segment-anything==1.0
