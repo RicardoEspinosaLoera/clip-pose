@@ -18,7 +18,8 @@ Keys
   x          : coil centre not visible (skips the third point)
   h / o / p / b : held / open / occluded / blurry
   n or space : save + next           BACKSPACE : save + previous           q : save + quit
-Usage: python annotate_tool.py --annotator ricardo [--start 0] [--no-prefill]
+Usage: python annotate_tool.py --annotator ricardo [--start N] [--no-prefill]
+       (without --start: resumes at the first frame not yet annotated; --start N opens frame N even if annotated)
 """
 
 import os
@@ -103,15 +104,18 @@ def load_previous(path):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--annotator", required=True)
-    ap.add_argument("--start", type=int, default=0)
+    ap.add_argument("--start", type=int, default=None, help="open frame N (1-based, as shown in the window), annotated or not")
     ap.add_argument("--no-prefill", action="store_true", help="do not pre-load the detector box")
     a = ap.parse_args()
     frames = json.load(open(os.path.join(OUT, "frames.json")))
     out_dir = os.path.join(OUT, "annotations", a.annotator)
     os.makedirs(out_dir, exist_ok=True)
-    idx = a.start
-    while idx < len(frames) and os.path.exists(os.path.join(out_dir, frames[idx]["file"] + ".json")):
-        idx += 1
+    if a.start is not None:                      # jump to an exact frame (also to review an annotated one)
+        idx = min(max(a.start - 1, 0), len(frames) - 1)
+    else:                                        # resume at the first frame not yet annotated
+        idx = 0
+        while idx < len(frames) and os.path.exists(os.path.join(out_dir, frames[idx]["file"] + ".json")):
+            idx += 1
     done = sum(os.path.exists(os.path.join(out_dir, f["file"] + ".json")) for f in frames)
     print(f"{done}/{len(frames)} frames already annotated by {a.annotator}; starting at {idx + 1}")
     cv2.namedWindow("annotate", cv2.WINDOW_AUTOSIZE)
