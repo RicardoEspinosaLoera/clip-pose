@@ -1,0 +1,35 @@
+{
+ "file": "vid_17_vid_17_1_1708001253.jpg",
+ "src": "vid_17\\vid_17\\1\\1708001253.jpg",
+ "video": "vid_17",
+ "width": 1920,
+ "height": 1080,
+ "box": [
+  718.0,
+  481.0,
+  600.0,
+  350.0
+ ],
+ "points": {
+  "tip": [
+   887.9555555555555,
+   559.3222222222222
+  ],
+  "spring": [
+   1189.1111111111113,
+   710.7555555555555
+  ],
+  "coil": [
+   1014.5777777777778,
+   624.3444444444444
+  ]
+ },
+ "attrs": {
+  "held": false,
+  "open": false,
+  "occluded": true,
+  "blurry": false
+ },
+ "annotator": "ricardo",
+ "box_prefilled": true
+}

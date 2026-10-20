@@ -1,0 +1,32 @@
+{
+ "file": "vid_05_vid_05_1_0509002325.jpg",
+ "src": "vid_05\\vid_05\\1\\0509002325.jpg",
+ "video": "vid_05",
+ "width": 1920,
+ "height": 1080,
+ "box": [
+  915.0,
+  422.0,
+  172.0,
+  116.0
+ ],
+ "points": {
+  "tip": [
+   926.4248888888889,
+   484.25333333333333
+  ],
+  "spring": [
+   1016.5955555555556,
+   482.8355555555555
+  ],
+  "coil": null
+ },
+ "attrs": {
+  "held": false,
+  "open": false,
+  "occluded": true,
+  "blurry": false
+ },
+ "annotator": "ricardo",
+ "box_prefilled": true
+}
