@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Guía de anotación de clips</title>
+<style>
+  :root { --fg:#1d1d1f; --muted:#5b5b60; --bg:#ffffff; --card:#f5f5f7; --accent:#0b62c4; --line:#d8d8dc; }
+  @media (prefers-color-scheme: dark) { :root { --fg:#ececee; --muted:#a3a3a8; --bg:#18181a; --card:#232326; --accent:#5aa3ff; --line:#3a3a3e; } }
+  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 860px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 1.7rem; margin: .2em 0 .1em; }
+  h2 { font-size: 1.2rem; margin-top: 2em; border-bottom: 1px solid var(--line); padding-bottom: .2em; }
+  .lead { color: var(--muted); }
+  table { border-collapse: collapse; width: 100%; margin: .6em 0; font-size: .95rem; }
+  th, td { border: 1px solid var(--line); padding: 6px 8px; text-align: left; vertical-align: top; }
+  th { background: var(--card); }
+  code, kbd { background: var(--card); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; font-size: .92em; }
+  pre { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 10px; overflow-x: auto; }
+  img { max-width: 100%; border-radius: 6px; border: 1px solid var(--line); }
+  .box { background: var(--card); border-left: 4px solid var(--accent); padding: 10px 14px; border-radius: 4px; margin: 1em 0; }
+  .dot { display:inline-block; width:.8em; height:.8em; border-radius:50%; vertical-align:middle; margin-right:4px; }
+</style>
+</head>
+<body>
+<main>
+<h1>Guía de anotación de clips de aneurisma</h1>
+<p class="lead">Proyecto clip-pose. Para cada uno de los 200 frames de cirugía real se marca una caja alrededor del clip, tres puntos y unos atributos. Tus anotaciones sirven para medir qué tan bien un modelo encuentra el clip en imágenes reales. Trabaja solo: no compares con otros anotadores hasta terminar.</p>
+
+<div class="box"><b>Tiempo:</b> unos 30 segundos por frame, alrededor de 1,5 a 2 horas en total. Puedes parar cuando quieras: todo se guarda al pasar de frame y la herramienta retoma donde te quedaste.</div>
+
+<h2>1. Preparar y abrir</h2>
+<ol>
+  <li>Necesitas Python 3.9 o más reciente (<a href="https://www.python.org/downloads/">python.org</a>; en Windows marca "Add Python to PATH" al instalar).</li>
+  <li>Descomprime el zip en una carpeta, por ejemplo en el Escritorio.</li>
+  <li>Windows: doble clic en <code>anotar.bat</code>. Mac o Linux: en una terminal dentro de la carpeta, <code>bash anotar.sh</code>.</li>
+  <li>La primera vez pide tu nombre (sin espacios ni acentos, por ejemplo <code>ana</code>). Se recuerda para las siguientes sesiones. Usa siempre el mismo.</li>
+</ol>
+
+<h2>2. Qué se marca</h2>
+<p><img src="referencia_puntos.jpg" alt="Clips sintéticos con los puntos de referencia"></p>
+<p>La imagen muestra el clip del modelo 3D con sus puntos: <span class="dot" style="background:#f5c400"></span>puntas de las mandíbulas, <span class="dot" style="background:#e000e0"></span>extremo trasero, <span class="dot" style="background:#2f7cff"></span>centro del muelle. En las cirugías reales el clip es de placas de titanio azul y se ve distinto, pero las partes son las mismas: dos mandíbulas que se cierran sobre el aneurisma y, detrás, el muelle (resorte) que las mantiene cerradas, que es donde lo agarra el colocador.</p>
+
+<table>
+  <tr><th>Paso</th><th>Qué marcar</th><th>Regla</th></tr>
+  <tr><td>Caja</td><td>Rectángulo alrededor del clip</td><td>Viene precargada en amarillo. Si está bien, no la toques. Si no encierra el clip completo o está sobre otra cosa, pulsa <kbd>c</kbd> y haz dos clics en esquinas opuestas.</td></tr>
+  <tr><td>1. Punta</td><td>Extremo libre de las mandíbulas</td><td>Donde termina físicamente el metal, en la línea central de la mandíbula. No el último píxel borroso ni un reflejo.</td></tr>
+  <tr><td>2. Extremo trasero</td><td>Lado opuesto a la punta</td><td>El punto más alejado de la punta: el borde exterior del muelle, donde agarra el colocador.</td></tr>
+  <tr><td>3. Centro del muelle</td><td>Centro del anillo del resorte</td><td>Si no se distingue el anillo, pulsa <kbd>x</kbd> (no visible). Es normal en muchos frames.</td></tr>
+</table>
+
+<h2>3. Casos difíciles</h2>
+<table>
+  <tr><th>Situación</th><th>Qué hacer</th></tr>
+  <tr><td>Mandíbulas abiertas</td><td>La punta es el punto medio entre las dos puntas, aunque caiga en el aire. Pulsa <kbd>o</kbd>.</td></tr>
+  <tr><td>Borde borroso</td><td>Marca a mitad de la transición entre el color del clip y el fondo. Si todo el clip está borroso, pulsa <kbd>b</kbd>.</td></tr>
+  <tr><td>Una punta tapada, la otra visible</td><td>Cerradas: la punta visible vale. Abiertas: estima la tapada siguiendo su mandíbula y marca el punto medio. Pulsa <kbd>p</kbd>.</td></tr>
+  <tr><td>Punta tapada del todo (tejido, sangre, colocador)</td><td>Si puedes inferirla por la dirección y el largo del clip, estímala y pulsa <kbd>p</kbd>. Si no hay forma, excluye el frame con <kbd>e</kbd>.</td></tr>
+  <tr><td>El colocador sujeta el clip</td><td>Pulsa <kbd>h</kbd>. El extremo trasero suele quedar dentro del colocador: estímalo y pulsa también <kbd>p</kbd>.</td></tr>
+  <tr><td>Más de un clip</td><td>Anota solo uno: el que sujeta el colocador; si ninguno, el de la caja precargada; si no, el más visible. Pulsa <kbd>m</kbd>.</td></tr>
+  <tr><td>No hay clip, o es imposible anotarlo</td><td>Pulsa <kbd>e</kbd>. El frame queda excluido y pasa al siguiente.</td></tr>
+</table>
+
+<h2>4. Teclas</h2>
+<table>
+  <tr><th>Tecla</th><th>Acción</th><th>Tecla</th><th>Acción</th></tr>
+  <tr><td>clic izquierdo</td><td>marca el siguiente punto</td><td><kbd>h</kbd></td><td>sujeto por el colocador</td></tr>
+  <tr><td><kbd>u</kbd></td><td>deshace el último punto</td><td><kbd>o</kbd></td><td>mandíbulas abiertas</td></tr>
+  <tr><td><kbd>r</kbd></td><td>reinicia el frame</td><td><kbd>p</kbd></td><td>parcialmente ocluido</td></tr>
+  <tr><td><kbd>c</kbd></td><td>dibujar otra caja</td><td><kbd>b</kbd></td><td>borroso</td></tr>
+  <tr><td><kbd>x</kbd></td><td>centro del muelle no visible</td><td><kbd>m</kbd></td><td>más de un clip</td></tr>
+  <tr><td><kbd>z</kbd></td><td>zoom / frame completo</td><td><kbd>e</kbd></td><td>excluir el frame</td></tr>
+  <tr><td><kbd>n</kbd> o espacio</td><td>guarda y siguiente</td><td>retroceso</td><td>guarda y anterior</td></tr>
+  <tr><td><kbd>q</kbd></td><td>guarda y sale</td><td></td><td></td></tr>
+</table>
+<p>Los atributos se activan y desactivan con la misma tecla; su estado se ve en la barra superior. Un frame solo se guarda cuando tiene caja y los tres puntos (o dos puntos más <kbd>x</kbd>). Si pulsas <kbd>n</kbd> a medias, la consola avisa que no se guardó.</p>
+<p>Para revisar un frame concreto, cierra con <kbd>q</kbd> y ábrelo con su número, por ejemplo el 37:</p>
+<pre>python pose_train/annotate_tool.py --annotator TU_NOMBRE --start 37</pre>
+
+<h2>5. Entregar</h2>
+<ol>
+  <li>Cuando la consola diga <code>200/200</code> (anotados más excluidos), Windows: doble clic en <code>entregar.bat</code>. Mac o Linux: <code>bash entregar.sh</code>.</li>
+  <li>Se crea <code>anotaciones_TU_NOMBRE.zip</code> en la carpeta. Envíaselo a Ricardo.</li>
+</ol>
+<p>Dudas sobre un caso que esta guía no cubre: anótalo como mejor puedas, pulsa <kbd>p</kbd> si algo lo tapa, y apunta el número del frame para comentarlo al final.</p>
+</main>
+</body>
+</html>

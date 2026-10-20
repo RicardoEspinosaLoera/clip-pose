@@ -16,3 +16,4 @@ Dockerfile text eol=lf
 *.npy binary
 *.pt binary
 *.pth binary
+*.bat text eol=crlf

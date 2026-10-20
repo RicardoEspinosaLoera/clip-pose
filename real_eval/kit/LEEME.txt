@@ -1,0 +1,8 @@
+Anotacion de clips de aneurisma (proyecto clip-pose)
+
+1. Lee GUIA_ANOTACION.html (doble clic, se abre en el navegador).
+2. Windows: doble clic en anotar.bat.   Mac/Linux: bash anotar.sh
+3. Al terminar los 200 frames: entregar.bat (o bash entregar.sh) y envia anotaciones_TU_NOMBRE.zip a Ricardo.
+
+Requisito: Python 3.9 o mas reciente. La primera vez se instalan opencv-python y numpy (unos 40 MB).
+Anota de forma independiente: no compares con otros anotadores hasta entregar.
