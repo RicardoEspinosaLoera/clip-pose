@@ -16,6 +16,7 @@ Keys
   left click : next point            u : undo last point       r : reset frame (box pre-loaded again)
   c          : clear box, click a new one                      z : toggle zoom / full frame
   x          : coil centre not visible (skips the third point)
+  e          : EXCLUDE frame (no clip, or clip impossible to annotate) -> saved as excluded, then next
   h / o / p / b : held / open / occluded / blurry
   n or space : save + next           BACKSPACE : save + previous           q : save + quit
 Usage: python annotate_tool.py --annotator ricardo [--start N] [--no-prefill]
@@ -46,6 +47,7 @@ class State:
             x, y, w, h = hint
             self.pts = [(float(x), float(y)), (float(x + w), float(y + h))]
         self.zoom = True
+        self.excluded = False
 
 
 def view_transform(st, W, H):
@@ -81,10 +83,12 @@ def render(img, st, name, idx, total):
         cv2.circle(vis, P(p), 7, COLS[i], 1)
         cv2.circle(vis, P(p), 1, COLS[i], -1)
     nxt = STEPS[len(st.pts)] if len(st.pts) < len(STEPS) else "done -> n = save + next"
+    if getattr(st, "excluded", False) and not st.pts:
+        nxt = "EXCLUDED (no clip). Click to annotate it anyway, or n = next"
     a = st.attrs
     l1 = f"[{idx + 1}/{total}] {name}   zoom x{s:.1f}   next: {nxt}"
     l2 = (f"held(h)={int(a['held'])}  open(o)={int(a['open'])}  occluded(p)={int(a['occluded'])}  blurry(b)={int(a['blurry'])}"
-          f"   |  c new box  u undo  r reset  z zoom  q quit")
+          f"   |  c new box  u undo  r reset  z zoom  e no clip  q quit")
     cv2.rectangle(vis, (0, 0), (VIEW_W, 56), (0, 0, 0), -1)
     cv2.putText(vis, l1, (10, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 255, 255), 2)
     cv2.putText(vis, l2, (10, 47), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 1)
@@ -93,6 +97,10 @@ def render(img, st, name, idx, total):
 
 def load_previous(path):
     d = json.load(open(path))
+    if d.get("excluded"):
+        st = State(prefill=False)
+        st.excluded = True
+        return st
     x, y, w, h = d["box"]
     st = State(prefill=False)
     st.pts = [(x, y), (x + w, y + h)] + [tuple(d["points"][k]) if d["points"].get(k) is not None else None
@@ -150,6 +158,12 @@ def main():
                 st.pts = []
             elif k == ord("x") and len(st.pts) == 4:
                 st.pts.append(None)
+            elif k == ord("e"):
+                json.dump(dict(file=fr["file"], src=fr["src"], video=fr["video"], width=W, height=H, excluded=True,
+                               reason="no clip / not annotatable", annotator=a.annotator), open(prev, "w"), indent=1)
+                print(f"  {fr['file']}: excluded")
+                idx += 1
+                break
             elif k == ord("z"):
                 st.zoom = not st.zoom
             elif k in (ord("h"), ord("o"), ord("p"), ord("b")):

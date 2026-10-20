@@ -49,9 +49,12 @@ def main():
     model = KeypointNet(len(cm.idx), a.arch, pretrained=False).to(device)
     model.load_state_dict(torch.load(a.ckpt, map_location=device)["model"])
     model.eval()
-    rows, cells = [], []
+    rows, cells, n_excluded = [], [], 0
     for jp in sorted(glob.glob(os.path.join(a.ann, "*.json"))):
         ann = json.load(open(jp))
+        if ann.get("excluded"):                  # annotator: no clip / not annotatable
+            n_excluded += 1
+            continue
         img = cv2.imread(os.path.join(a.frames, ann["file"]))
         if img is None:
             continue
@@ -95,6 +98,7 @@ def main():
             cv2.rectangle(c, (0, 0), (320, 18), (0, 0, 0), -1)
             cv2.putText(c, f"{ann['file'][:14]} err {row['mean_frac']:.2f}L axis {row['axis_deg']:.0f}", (3, 13), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 255, 255), 1)
             cells.append(c)
+    print(f"{len(rows)} annotated frames, {n_excluded} excluded by the annotator")
     if not rows:
         print("no annotated frames found in", a.ann)
         return
