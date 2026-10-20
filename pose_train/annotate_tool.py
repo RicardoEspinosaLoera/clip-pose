@@ -17,7 +17,8 @@ Keys
   c          : clear box, click a new one                      z : toggle zoom / full frame
   x          : coil centre not visible (skips the third point)
   e          : EXCLUDE frame (no clip, or clip impossible to annotate) -> saved as excluded, then next
-  h / o / p / b : held / open / occluded / blurry
+  h / o / p / b / m : held / open / occluded / blurry / more than one clip in the frame
+  several clips: annotate ONE -> the one held by the applier; else the pre-loaded box if it is a clip; else the most visible
   n or space : save + next           BACKSPACE : save + previous           q : save + quit
 Usage: python annotate_tool.py --annotator ricardo [--start N] [--no-prefill]
        (without --start: resumes at the first frame not yet annotated; --start N opens frame N even if annotated)
@@ -42,7 +43,7 @@ ZOOM_MARGIN = 2.2          # zoom window = box size x margin (keeps context arou
 class State:
     def __init__(self, hint=None, prefill=True):
         self.pts = []
-        self.attrs = dict(held=False, open=False, occluded=False, blurry=False)
+        self.attrs = dict(held=False, open=False, occluded=False, blurry=False, multi=False)
         if prefill and hint is not None:
             x, y, w, h = hint
             self.pts = [(float(x), float(y)), (float(x + w), float(y + h))]
@@ -87,7 +88,7 @@ def render(img, st, name, idx, total):
         nxt = "EXCLUDED (no clip). Click to annotate it anyway, or n = next"
     a = st.attrs
     l1 = f"[{idx + 1}/{total}] {name}   zoom x{s:.1f}   next: {nxt}"
-    l2 = (f"held(h)={int(a['held'])}  open(o)={int(a['open'])}  occluded(p)={int(a['occluded'])}  blurry(b)={int(a['blurry'])}"
+    l2 = (f"held(h)={int(a['held'])}  open(o)={int(a['open'])}  occl(p)={int(a['occluded'])}  blur(b)={int(a['blurry'])}  multi(m)={int(a['multi'])}"
           f"   |  c new box  u undo  r reset  z zoom  e no clip  q quit")
     cv2.rectangle(vis, (0, 0), (VIEW_W, 56), (0, 0, 0), -1)
     cv2.putText(vis, l1, (10, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 255, 255), 2)
@@ -105,7 +106,7 @@ def load_previous(path):
     st = State(prefill=False)
     st.pts = [(x, y), (x + w, y + h)] + [tuple(d["points"][k]) if d["points"].get(k) is not None else None
                                          for k in ("tip", "spring", "coil")]
-    st.attrs = d["attrs"]
+    st.attrs = dict(dict(held=False, open=False, occluded=False, blurry=False, multi=False), **d["attrs"])
     return st
 
 
@@ -166,8 +167,8 @@ def main():
                 break
             elif k == ord("z"):
                 st.zoom = not st.zoom
-            elif k in (ord("h"), ord("o"), ord("p"), ord("b")):
-                key = {ord("h"): "held", ord("o"): "open", ord("p"): "occluded", ord("b"): "blurry"}[k]
+            elif k in (ord("h"), ord("o"), ord("p"), ord("b"), ord("m")):
+                key = {ord("h"): "held", ord("o"): "open", ord("p"): "occluded", ord("b"): "blurry", ord("m"): "multi"}[k]
                 st.attrs[key] = not st.attrs[key]
             elif k in (ord("n"), ord(" "), ord("q"), 8):
                 if len(st.pts) == len(STEPS):

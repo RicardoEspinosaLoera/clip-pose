@@ -116,7 +116,7 @@ def main():
                     tip_frac_med=float(np.median([r["tip_frac"] for r in sel])), spring_frac_med=float(np.median([r["spring_frac"] for r in sel])),
                     axis_deg_med=float(np.median(ax)), axis_lt_10=float(np.mean(ax < 10)))
     groups = [(rows, "all")]
-    for k in ("held", "open", "occluded", "blurry"):
+    for k in ("held", "open", "occluded", "blurry", "multi"):
         groups += [([r for r in rows if r.get(f"attr_{k}")], k), ([r for r in rows if not r.get(f"attr_{k}")], f"not_{k}")]
     summary = [summ(sel, name) for sel, name in groups if sel]
     json.dump(summary, open(os.path.join(a.out, "summary.json"), "w"), indent=1)
