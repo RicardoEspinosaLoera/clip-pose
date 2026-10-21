@@ -59,6 +59,9 @@ def main():
         if img is None:
             continue
         x, y, w, h = ann["box"]
+        P = np.array([v for v in ann["points"].values() if v is not None], float)   # union with the points:
+        x0, y0 = min(x, P[:, 0].min()), min(y, P[:, 1].min())                       # the box can miss the clip
+        x, y, w, h = x0, y0, max(x + w, P[:, 0].max()) - x0, max(y + h, P[:, 1].max()) - y0
         cx, cy, side = x + w / 2, y + h / 2, max(64.0, a.margin * max(w, h))
         s = a.crop / side
         A = np.array([[s, 0, a.crop / 2 - s * cx], [0, s, a.crop / 2 - s * cy]], np.float64)
