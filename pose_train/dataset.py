@@ -23,6 +23,8 @@ from scipy.spatial.transform import Rotation as scipyR
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 GT_DIR = os.path.normpath(os.path.join(HERE, "..", "GT_Generator"))
+cv2.setNumThreads(0)          # one thread per DataLoader worker: 9 runs x 8 workers on 80 cores oversubscribed the CPU
+cv2.ocl.setUseOpenCL(False)
 IMAGENET_MEAN = np.array([0.485, 0.456, 0.406], np.float32)
 IMAGENET_STD = np.array([0.229, 0.224, 0.225], np.float32)
 
