@@ -1,0 +1,10 @@
+{
+ "file": "vid_00_vid_00_1_0010002125.jpg",
+ "src": "vid_00\\vid_00\\1\\0010002125.jpg",
+ "video": "vid_00",
+ "width": 1920,
+ "height": 1080,
+ "excluded": true,
+ "reason": "no clip / not annotatable",
+ "annotator": "ricardo"
+}

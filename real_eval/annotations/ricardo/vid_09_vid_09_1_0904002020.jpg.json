@@ -1,0 +1,32 @@
+{
+ "file": "vid_09_vid_09_1_0904002020.jpg",
+ "src": "vid_09\\vid_09\\1\\0904002020.jpg",
+ "video": "vid_09",
+ "width": 1920,
+ "height": 1080,
+ "box": [
+  681.0,
+  363.0,
+  257.0,
+  247.0
+ ],
+ "points": {
+  "tip": [
+   771.5999999999999,
+   418.79999999999995
+  ],
+  "spring": [
+   818.4,
+   466.79999999999995
+  ],
+  "coil": null
+ },
+ "attrs": {
+  "held": false,
+  "open": false,
+  "occluded": true,
+  "blurry": false
+ },
+ "annotator": "ricardo",
+ "box_prefilled": true
+}
