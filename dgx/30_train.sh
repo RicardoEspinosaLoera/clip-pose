@@ -5,6 +5,7 @@
 #   ONLY='e0_' bash dgx/30_train.sh      # regex filter on run names
 #   SEEDS='1 2' bash dgx/30_train.sh     # extra E0 seeds (journal version)
 #   ITERS=30000 BATCH=16 WORKERS=8 FORCE=1 NOWAIT=1
+#   EXTRA="--amodal" RUN_SUFFIX=_amodal ONLY="m1|a0" bash dgx/30_train.sh   # extra train.py flags, new run names
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/env.sh"
 if pgrep -f "render_clip_poses_depth.py" >/dev/null 2>&1 && [ -z "${FORCE:-}" ]; then
@@ -37,7 +38,7 @@ cd "$ROOT/pose_train"
 i=0
 declare -a PIDS=() NAMES=()
 for spec in "${RUNS_LIST[@]}"; do
-    name="${spec%%|*}"; args="${spec#*|}"
+    name="${spec%%|*}${RUN_SUFFIX:-}"; args="${spec#*|} ${EXTRA:-}"
     if [ -n "${ONLY:-}" ] && ! echo "$name" | grep -Eq "$ONLY"; then continue; fi
     if [ -f "$RUNS/$name/best.pt" ] && [ -z "${FORCE:-}" ]; then echo "  skip $name (best.pt exists; FORCE=1 to redo)"; continue; fi
     gpu=$((i % NGPU)); i=$((i + 1))

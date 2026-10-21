@@ -86,8 +86,9 @@ def read_split(path):
 
 class ClipPoseDataset(Dataset):
     def __init__(self, data_dir, stems, clip_model, crop=512, heat=128, sigma=2.0, train=True,
-                 margin=1.5, jitter=0.10, scale_jitter=0.10, photometric=True, image_suffix=""):
+                 margin=1.5, jitter=0.10, scale_jitter=0.10, photometric=True, image_suffix="", amodal=False):
         self.d = data_dir
+        self.amodal = amodal                             # True: supervise keypoints hidden by the applier too (exact GT)
         self.image_suffix = image_suffix                 # "_flat" = ablation A0 (flat render, no applier)
         self.stems = list(stems)
         self.cm = clip_model
@@ -137,7 +138,7 @@ class ClipPoseDataset(Dataset):
         vm = cv2.dilate((vis_mask > 127).astype(np.uint8), np.ones((5, 5), np.uint8)) > 0
         for k in range(self.K):
             ui, vi = int(round(uv[k, 0])), int(round(uv[k, 1]))
-            if z[k] > 0 and 0 <= ui < W and 0 <= vi < H and vm[vi, ui]:
+            if z[k] > 0 and 0 <= ui < W and 0 <= vi < H and (self.amodal or vm[vi, ui]):
                 vis[k] = 1.0
         inside = (kp[:, 0] >= 0) & (kp[:, 0] < self.crop) & (kp[:, 1] >= 0) & (kp[:, 1] < self.crop)
         vis *= inside.astype(np.float32)
