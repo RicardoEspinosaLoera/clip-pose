@@ -42,7 +42,7 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--batch", type=int, default=16)
     ap.add_argument("--workers", type=int, default=4)
-    ap.add_argument("--jaw-step", type=float, default=6.0, help="jaw-angle grid of the PnP search, 0..20 deg (6 = original 0/6/12/18)")
+    ap.add_argument("--jaw-step", type=float, default=1.0, help="jaw-angle grid of the PnP search, 0..20 deg (6 = original 0/6/12/18)")
     ap.add_argument("--image-suffix", default="", help='"_flat" evaluates on the flat renders (ablation A0)')
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)

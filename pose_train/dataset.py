@@ -222,7 +222,10 @@ def pose_pnp(kp_crop, conf, P3, K_crop, min_conf=0.2, reproj=8.0):
     return R, tvec.reshape(3), sel[inl[:, 0]]
 
 
-def pose_pnp_jawsearch(kp_crop, conf, clip_model, K_crop, jaws=(0.0, 6.0, 12.0, 18.0), **kw):
+JAW_GRID = tuple(float(j) for j in range(0, 21))     # 1-deg grid: the 6-deg grid tripled ADD-S on held (open) clips
+
+
+def pose_pnp_jawsearch(kp_crop, conf, clip_model, K_crop, jaws=JAW_GRID, **kw):
     """At inference the jaw angle is unknown: solve PnP for a few articulations and keep the one
     with the lowest reprojection residual. Returns (R, t, inliers, jaw) or None."""
     best = None
