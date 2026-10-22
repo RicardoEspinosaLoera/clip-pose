@@ -1,10 +1,10 @@
 """
 finetune_real.py — option A of the sprint: fine-tune a 3-keypoint heatmap model on the annotated real
-MACS frames (tip, back end = "spring", coil centre) with video-grouped cross-validation, starting either
+MACS frames (tip, clip head centre, back end; see real_points.py) with video-grouped cross-validation, starting either
 from the synthetic M1 checkpoint (8 synthetic keypoints mapped to the 3 real ones) or from ImageNet.
 
   init synthetic : backbone + deconvs from the synthetic checkpoint; head channels initialised from the
-                   synthetic heads (tip = mean of tip_a/tip_b, spring, coil_centre) -> iters 0 = zero-shot
+                   synthetic heads (tip = mean of tip_a/tip_b, head = coil_centre, back = spring) -> iters 0 = zero-shot
   init imagenet  : ImageNet ResNet-34 backbone, random deconvs and head (no synthetic data)
 
 Folds: videos are assigned greedily to --folds folds (balanced frame counts); each fold is trained on the
@@ -13,7 +13,7 @@ tested exactly once by a model that never saw its video. Augmentation: full rota
 shift jitter, photometric (the real clip appears at any orientation).
 
 Metrics per frame (original px, normalised by the annotated clip length L = |tip - back end|):
-tip / back-end / coil error, mean error, PCK@0.1L and @0.2L, axis error (deg). Groups by attribute.
+tip / head / back-end error, mean error, PCK@0.1L and @0.2L, axis error (deg). Groups by attribute.
 
 Usage:
   python finetune_real.py --ann ../real_eval/annotations/ricardo --init synthetic --ckpt runs/e0_m1_s0_amodal/best.pt \
@@ -41,7 +41,7 @@ sys.path.insert(0, HERE)
 from dataset import decode_heatmaps, IMAGENET_MEAN, IMAGENET_STD, ClipPoseDataset
 from model import KeypointNet, heatmap_loss
 
-REAL = ("tip", "spring", "coil")
+from real_points import KEYS as REAL, SYNTH_MAP, norm_points
 ATTRS = ("held", "open", "occluded", "blurry", "multi")
 
 
@@ -64,7 +64,8 @@ def load_items(frames_dir, ann_dir):
         img = cv2.imread(os.path.join(frames_dir, d["file"]), cv2.IMREAD_COLOR)
         if img is None:
             continue
-        pts = np.array([d["points"][k] if d["points"].get(k) is not None else [np.nan, np.nan] for k in REAL], np.float64)
+        P = norm_points(d["points"])
+        pts = np.array([P[k] if P[k] is not None else [np.nan, np.nan] for k in REAL], np.float64)
         items.append(dict(file=d["file"], video=d.get("video") or d["file"][:6], img=img, box=np.array(d["box"], float),
                           pts=pts, attrs={k: bool(d.get("attrs", {}).get(k, False)) for k in ATTRS}))
     return items
@@ -136,7 +137,7 @@ def build_model(init, ckpt, arch):
     m.load_state_dict(torch.load(ckpt, map_location="cpu")["model"])
     W, b = m.head.weight.data, m.head.bias.data
     ix = {n: i for i, n in enumerate(names)}
-    rows = [(ix["tip_a"], ix["tip_b"]), (ix["spring"],), (ix["coil_centre"],)]
+    rows = [tuple(ix[n] for n in SYNTH_MAP[k]) for k in REAL]
     head = nn.Conv2d(W.shape[1], len(REAL), 1)
     head.weight.data = torch.stack([W[list(r)].mean(0) for r in rows])
     head.bias.data = torch.stack([b[list(r)].mean() for r in rows])
@@ -189,7 +190,8 @@ def predict(model, ds, device):
 
 def frame_row(it, pred, fold):
     gt = it["pts"]
-    L = float(np.linalg.norm(gt[0] - gt[1])) + 1e-6
+    j = 1 if not np.isnan(gt[1, 0]) else 2                    # axis tip -> head (fallback: back)
+    L = float(np.linalg.norm(gt[0] - gt[j])) + 1e-6
     row = dict(file=it["file"], video=it["video"], fold=fold, L_px=L, **{f"attr_{k}": int(v) for k, v in it["attrs"].items()})
     fr = []
     for k, name in enumerate(REAL):
@@ -199,7 +201,7 @@ def frame_row(it, pred, fold):
         row[f"{name}_px"], row[f"{name}_frac"] = e, e / L
         fr.append(e / L)
     row["mean_frac"] = float(np.mean(fr))
-    dp, dg = pred[0] - pred[1], gt[0] - gt[1]
+    dp, dg = pred[0] - pred[j], gt[0] - gt[j]
     c = float(np.dot(dp, dg) / (np.linalg.norm(dp) * np.linalg.norm(dg) + 1e-6))
     row["axis_deg"] = float(np.degrees(np.arccos(np.clip(c, -1, 1))))
     return row
@@ -211,7 +213,7 @@ def summarize(rows):
         ax = np.array([r["axis_deg"] for r in sel])
         return dict(name=name, n=len(sel), mean_frac_med=float(np.median(v)), mean_frac_p90=float(np.percentile(v, 90)),
                     pck_0_1=float(np.mean(v < 0.1)), pck_0_2=float(np.mean(v < 0.2)),
-                    tip_frac_med=float(np.median([r["tip_frac"] for r in sel])), spring_frac_med=float(np.median([r["spring_frac"] for r in sel])),
+                    tip_frac_med=float(np.median([r["tip_frac"] for r in sel])), head_frac_med=float(np.median([r["head_frac"] for r in sel if "head_frac" in r] or [np.nan])),
                     axis_deg_med=float(np.median(ax)), axis_lt_10=float(np.mean(ax < 10)), axis_lt_20=float(np.mean(ax < 20)))
     groups = [(rows, "all")]
     for k in ATTRS:
@@ -268,10 +270,10 @@ def main():
     json.dump(summary, open(os.path.join(a.out, "summary.json"), "w"), indent=1)
     json.dump(dict(vars(a), n_frames=len(items), folds=[[items[i]["file"] for i in fl] for fl in folds]),
               open(os.path.join(a.out, "config.json"), "w"), indent=1)
-    print(f"{'group':12s} {'n':>4s} {'err/L':>6s} {'PCK.1':>6s} {'PCK.2':>6s} {'tip/L':>6s} {'spr/L':>6s} {'axis':>6s} {'<10':>5s} {'<20':>5s}")
+    print(f"{'group':12s} {'n':>4s} {'err/L':>6s} {'PCK.1':>6s} {'PCK.2':>6s} {'tip/L':>6s} {'head/L':>6s} {'axis':>6s} {'<10':>5s} {'<20':>5s}")
     for m in summary:
         print(f"{m['name']:12s} {m['n']:4d} {m['mean_frac_med']:6.3f} {m['pck_0_1']:6.2f} {m['pck_0_2']:6.2f} {m['tip_frac_med']:6.3f} "
-              f"{m['spring_frac_med']:6.3f} {m['axis_deg_med']:6.1f} {m['axis_lt_10']:5.2f} {m['axis_lt_20']:5.2f}")
+              f"{m['head_frac_med']:6.3f} {m['axis_deg_med']:6.1f} {m['axis_lt_10']:5.2f} {m['axis_lt_20']:5.2f}")
     print("->", a.out)
 
 

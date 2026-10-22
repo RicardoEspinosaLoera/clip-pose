@@ -37,16 +37,16 @@
   <li>La primera vez pide tu nombre (sin espacios ni acentos, por ejemplo <code>ana</code>). Se recuerda para las siguientes sesiones. Usa siempre el mismo.</li>
 </ol>
 
-<h2>2. Qué se marca</h2>
-<p><img src="referencia_puntos.jpg" alt="Clips sintéticos con los puntos de referencia"></p>
-<p>La imagen muestra el clip del modelo 3D con sus puntos: <span class="dot" style="background:#f5c400"></span>puntas de las mandíbulas, <span class="dot" style="background:#e000e0"></span>extremo trasero, <span class="dot" style="background:#2f7cff"></span>centro del muelle. En las cirugías reales el clip es de placas de titanio azul y se ve distinto, pero las partes son las mismas: dos mandíbulas que se cierran sobre el aneurisma y, detrás, el muelle (resorte) que las mantiene cerradas, que es donde lo agarra el colocador.</p>
+<h2>2. Qué marcar</h2>
+<p><img src="como_anotar.png" alt="Ilustración: partes del clip, qué marcar, mandíbulas abiertas, punta oculta, borde borroso y errores frecuentes"></p>
+<p>El clip de las cirugías es de titanio azul. Tiene una <b>cabeza azul</b> (el cuerpo del clip, donde está el resorte; casi siempre la sujeta el colocador) y dos <b>mandíbulas</b> oscuras que salen de ella y cierran el cuello del aneurisma. La ilustración es un esquema: en las imágenes el clip se ve más pequeño, borroso y con reflejos.</p>
 
 <table>
   <tr><th>Paso</th><th>Qué marcar</th><th>Regla</th></tr>
-  <tr><td>Caja</td><td>Rectángulo alrededor del clip</td><td>Viene precargada en amarillo. Si está bien, no la toques. Si no encierra el clip completo o está sobre otra cosa, pulsa <kbd>c</kbd> y haz dos clics en esquinas opuestas.</td></tr>
-  <tr><td>1. Punta</td><td>Extremo libre de las mandíbulas</td><td>Donde termina físicamente el metal, en la línea central de la mandíbula. No el último píxel borroso ni un reflejo.</td></tr>
-  <tr><td>2. Extremo trasero</td><td>Lado opuesto a la punta</td><td>El punto más alejado de la punta: el borde exterior del muelle, donde agarra el colocador.</td></tr>
-  <tr><td>3. Centro del muelle</td><td>Centro del anillo del resorte</td><td>Si no se distingue el anillo, pulsa <kbd>x</kbd> (no visible). Es normal en muchos frames.</td></tr>
+  <tr><td>Caja</td><td>Rectángulo alrededor de la cabeza y las mandíbulas</td><td>Viene precargada en amarillo, <b>revísala siempre</b>: muchas no encierran el clip completo o están sobre otra cosa. Si no está bien, pulsa <kbd>c</kbd> y haz dos clics en esquinas opuestas. No incluyas el colocador.</td></tr>
+  <tr><td>1. Punta</td><td>Extremo libre de las mandíbulas</td><td>Donde termina físicamente el metal oscuro, en la línea central. No el último píxel borroso ni un reflejo.</td></tr>
+  <tr><td>2. Cabeza</td><td>Centro de la cabeza azul</td><td>El centro del cuerpo azul del clip, aunque el colocador tape una parte.</td></tr>
+  <tr><td>3. Extremo trasero</td><td>Final del clip, opuesto a la punta</td><td>Solo si se ve. Si está dentro del colocador o tapado, pulsa <kbd>x</kbd>. Es normal en muchos frames.</td></tr>
 </table>
 
 <h2>3. Casos difíciles</h2>
@@ -56,7 +56,7 @@
   <tr><td>Borde borroso</td><td>Marca a mitad de la transición entre el color del clip y el fondo. Si todo el clip está borroso, pulsa <kbd>b</kbd>.</td></tr>
   <tr><td>Una punta tapada, la otra visible</td><td>Cerradas: la punta visible vale. Abiertas: estima la tapada siguiendo su mandíbula y marca el punto medio. Pulsa <kbd>p</kbd>.</td></tr>
   <tr><td>Punta tapada del todo (tejido, sangre, colocador)</td><td>Si puedes inferirla por la dirección y el largo del clip, estímala y pulsa <kbd>p</kbd>. Si no hay forma, excluye el frame con <kbd>e</kbd>.</td></tr>
-  <tr><td>El colocador sujeta el clip</td><td>Pulsa <kbd>h</kbd>. El extremo trasero suele quedar dentro del colocador: estímalo y pulsa también <kbd>p</kbd>.</td></tr>
+  <tr><td>El colocador sujeta el clip</td><td>Pulsa <kbd>h</kbd>. Marca la punta y el centro de la cabeza; el extremo trasero suele quedar dentro del colocador: pulsa <kbd>x</kbd>.</td></tr>
   <tr><td>Más de un clip</td><td>Anota solo uno: el que sujeta el colocador; si ninguno, el de la caja precargada; si no, el más visible. Pulsa <kbd>m</kbd>.</td></tr>
   <tr><td>No hay clip, o es imposible anotarlo</td><td>Pulsa <kbd>e</kbd>. El frame queda excluido y pasa al siguiente.</td></tr>
 </table>
@@ -68,12 +68,12 @@
   <tr><td><kbd>u</kbd></td><td>deshace el último punto</td><td><kbd>o</kbd></td><td>mandíbulas abiertas</td></tr>
   <tr><td><kbd>r</kbd></td><td>reinicia el frame</td><td><kbd>p</kbd></td><td>parcialmente ocluido</td></tr>
   <tr><td><kbd>c</kbd></td><td>dibujar otra caja</td><td><kbd>b</kbd></td><td>borroso</td></tr>
-  <tr><td><kbd>x</kbd></td><td>centro del muelle no visible</td><td><kbd>m</kbd></td><td>más de un clip</td></tr>
+  <tr><td><kbd>x</kbd></td><td>extremo trasero no visible</td><td><kbd>m</kbd></td><td>más de un clip</td></tr>
   <tr><td><kbd>z</kbd></td><td>zoom / frame completo</td><td><kbd>e</kbd></td><td>excluir el frame</td></tr>
   <tr><td><kbd>n</kbd> o espacio</td><td>guarda y siguiente</td><td>retroceso</td><td>guarda y anterior</td></tr>
   <tr><td><kbd>q</kbd></td><td>guarda y sale</td><td></td><td></td></tr>
 </table>
-<p>Los atributos se activan y desactivan con la misma tecla; su estado se ve en la barra superior. Un frame solo se guarda cuando tiene caja y los tres puntos (o dos puntos más <kbd>x</kbd>). Si pulsas <kbd>n</kbd> a medias, la consola avisa que no se guardó.</p>
+<p>Los atributos se activan y desactivan con la misma tecla; su estado se ve en la barra superior. Un frame solo se guarda cuando tiene caja y los tres puntos (o punta y cabeza más <kbd>x</kbd>). Si pulsas <kbd>n</kbd> a medias, la consola avisa que no se guardó.</p>
 <p>Para revisar un frame concreto, cierra con <kbd>q</kbd> y ábrelo con su número, por ejemplo el 37:</p>
 <pre>python pose_train/annotate_tool.py --annotator TU_NOMBRE --start 37</pre>
 

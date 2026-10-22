@@ -29,6 +29,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from dataset import ClipModel, decode_heatmaps, IMAGENET_MEAN, IMAGENET_STD
 from model import KeypointNet
+from real_points import KEYS, SYNTH_MAP, norm_points, axis_key
 
 
 def main():
@@ -59,7 +60,7 @@ def main():
         if img is None:
             continue
         x, y, w, h = ann["box"]
-        P = np.array([v for v in ann["points"].values() if v is not None], float)   # union with the points:
+        P = np.array([v for v in norm_points(ann["points"]).values() if v is not None], float)   # union with the points:
         x0, y0 = min(x, P[:, 0].min()), min(y, P[:, 1].min())                       # the box can miss the clip
         x, y, w, h = x0, y0, max(x + w, P[:, 0].max()) - x0, max(y + h, P[:, 1].max()) - y0
         cx, cy, side = x + w / 2, y + h / 2, max(64.0, a.margin * max(w, h))
@@ -74,23 +75,24 @@ def main():
         pc = pts * (a.crop / hm.shape[-1])
         po = (pc - A[:, 2][None, :]) / s                     # back to original pixels
         kp = {n: po[i] for i, n in enumerate(names)}
-        pred = dict(tip=(kp["tip_a"] + kp["tip_b"]) / 2, spring=kp["spring"], coil=kp["coil_centre"])
-        gt = {k: np.array(v, float) for k, v in ann["points"].items() if v is not None}   # coil may be "not visible"
-        L = float(np.linalg.norm(gt["tip"] - gt["spring"])) + 1e-6
+        pred = {k: np.mean([kp[n] for n in SYNTH_MAP[k]], 0) for k in KEYS}
+        gt = {k: np.array(v, float) for k, v in norm_points(ann["points"]).items() if v is not None}   # back may be hidden
+        ak = axis_key(gt)
+        L = float(np.linalg.norm(gt["tip"] - gt[ak])) + 1e-6
         row = dict(file=ann["file"], video=ann.get("video", ""), L_px=L, **{f"attr_{k}": int(v) for k, v in ann["attrs"].items()})
-        for k in ("tip", "spring", "coil"):
+        for k in KEYS:
             if k not in gt:
                 continue
             e = float(np.linalg.norm(pred[k] - gt[k]))
             row[f"{k}_px"], row[f"{k}_frac"] = e, e / L
-        dp, dg = pred["tip"] - pred["spring"], gt["tip"] - gt["spring"]
+        dp, dg = pred["tip"] - pred[ak], gt["tip"] - gt[ak]
         cosang = float(np.dot(dp, dg) / (np.linalg.norm(dp) * np.linalg.norm(dg) + 1e-6))
         row["axis_deg"] = float(np.degrees(np.arccos(np.clip(cosang, -1, 1))))
-        row["mean_frac"] = float(np.mean([row[f"{k}_frac"] for k in ("tip", "spring", "coil") if f"{k}_frac" in row]))
+        row["mean_frac"] = float(np.mean([row[f"{k}_frac"] for k in KEYS if f"{k}_frac" in row]))
         rows.append(row)
         if len(cells) < a.n_montage:
             vis = img.copy()
-            for k, col in (("tip", (0, 0, 255)), ("spring", (255, 0, 255)), ("coil", (255, 128, 0))):
+            for k, col in (("tip", (0, 0, 255)), ("head", (255, 128, 0)), ("back", (255, 0, 255))):
                 if k not in gt:
                     continue
                 cv2.circle(vis, tuple(int(v) for v in gt[k]), 6, col, 2)
@@ -116,16 +118,16 @@ def main():
         ax = np.array([r["axis_deg"] for r in sel])
         return dict(name=name, n=len(sel), mean_frac_med=float(np.median(v)), mean_frac_p90=float(np.percentile(v, 90)),
                     pck_0_1=float(np.mean(v < 0.1)), pck_0_2=float(np.mean(v < 0.2)),
-                    tip_frac_med=float(np.median([r["tip_frac"] for r in sel])), spring_frac_med=float(np.median([r["spring_frac"] for r in sel])),
+                    tip_frac_med=float(np.median([r["tip_frac"] for r in sel])), head_frac_med=float(np.median([r["head_frac"] for r in sel if "head_frac" in r] or [np.nan])),
                     axis_deg_med=float(np.median(ax)), axis_lt_10=float(np.mean(ax < 10)))
     groups = [(rows, "all")]
     for k in ("held", "open", "occluded", "blurry", "multi"):
         groups += [([r for r in rows if r.get(f"attr_{k}")], k), ([r for r in rows if not r.get(f"attr_{k}")], f"not_{k}")]
     summary = [summ(sel, name) for sel, name in groups if sel]
     json.dump(summary, open(os.path.join(a.out, "summary.json"), "w"), indent=1)
-    print(f"{'group':12s} {'n':>4s} {'err/L med':>10s} {'p90':>6s} {'PCK.1':>6s} {'PCK.2':>6s} {'tip/L':>6s} {'spr/L':>6s} {'axis':>6s} {'<10deg':>6s}")
+    print(f"{'group':12s} {'n':>4s} {'err/L med':>10s} {'p90':>6s} {'PCK.1':>6s} {'PCK.2':>6s} {'tip/L':>6s} {'head/L':>6s} {'axis':>6s} {'<10deg':>6s}")
     for m in summary:
-        print(f"{m['name']:12s} {m['n']:4d} {m['mean_frac_med']:10.3f} {m['mean_frac_p90']:6.3f} {m['pck_0_1']:6.2f} {m['pck_0_2']:6.2f} {m['tip_frac_med']:6.3f} {m['spring_frac_med']:6.3f} {m['axis_deg_med']:6.1f} {m['axis_lt_10']:6.2f}")
+        print(f"{m['name']:12s} {m['n']:4d} {m['mean_frac_med']:10.3f} {m['mean_frac_p90']:6.3f} {m['pck_0_1']:6.2f} {m['pck_0_2']:6.2f} {m['tip_frac_med']:6.3f} {m['head_frac_med']:6.3f} {m['axis_deg_med']:6.1f} {m['axis_lt_10']:6.2f}")
     if cells:
         while len(cells) % 5:
             cells.append(np.zeros_like(cells[0]))

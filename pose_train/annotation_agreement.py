@@ -30,7 +30,7 @@ import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__))
 RE = os.path.normpath(os.path.join(HERE, "..", "real_eval"))
 ATTRS = ("held", "open", "occluded", "blurry", "multi")
-PTS = ("tip", "spring", "coil")
+from real_points import KEYS as PTS, norm_points, clip_length
 COLS = [(0, 0, 255), (0, 200, 0), (255, 120, 0), (255, 0, 255), (0, 220, 220)]
 
 
@@ -90,6 +90,9 @@ def main():
             row["status"] = "not annotated"
             rows.append(row)
             continue
+        for d_ in anns.values():
+            if not d_.get("excluded"):
+                d_["points"] = norm_points(d_["points"])
         excl = [w for w, d in anns.items() if d.get("excluded")]
         keep = {w: d for w, d in anns.items() if not d.get("excluded")}
         flags = []
@@ -102,7 +105,7 @@ def main():
             row.update(status="excluded", flags="; ".join(flags))
             rows.append(row)
             continue
-        L = float(np.median([np.linalg.norm(np.subtract(d["points"]["tip"], d["points"]["spring"])) for d in keep.values()]))
+        L = float(np.median([clip_length(d["points"]) for d in keep.values()]))
         row["L_px"] = round(L, 1)
         # pairwise
         ious, worst = [], {k: 0.0 for k in PTS}
@@ -127,14 +130,16 @@ def main():
             row[f"{k}_maxdiff_px"] = round(worst[k], 1)
             if worst[k] > thr:
                 flags.append(f"{k} {worst[k]:.1f}px")
-        coil_vis = [d["points"].get("coil") is not None for d in keep.values()]
-        if 0 < sum(coil_vis) < len(coil_vis):
-            flags.append("coil visibility split")
+        for k in PTS:
+            vis_k = [d["points"].get(k) is not None for d in keep.values()]
+            if 0 < sum(vis_k) < len(vis_k):
+                flags.append(f"{k} visibility split")
         # consensus
         box = np.median(np.array([d["box"] for d in keep.values()], float), 0)
-        pts = {k: np.median(np.array([d["points"][k] for d in keep.values()], float), 0).tolist() for k in ("tip", "spring")}
-        coils = [d["points"]["coil"] for d in keep.values() if d["points"].get("coil") is not None]
-        pts["coil"] = np.median(np.array(coils, float), 0).tolist() if len(coils) * 2 > len(keep) else None
+        pts = {}
+        for k in PTS:
+            have = [d["points"][k] for d in keep.values() if d["points"].get(k) is not None]
+            pts[k] = np.median(np.array(have, float), 0).tolist() if len(have) * 2 > len(keep) else None
         attrs = {k: bool(sum(bool(d["attrs"].get(k, False)) for d in keep.values()) * 2 > len(keep)) for k in ATTRS}
         for k in ATTRS:
             split = 0 < sum(bool(d["attrs"].get(k, False)) for d in keep.values()) < len(keep)
@@ -145,7 +150,7 @@ def main():
                 attr_votes[k].append([int(bool(d["attrs"].get(k, False))) for d in keep.values()])
         any_d = next(iter(keep.values()))
         json.dump(dict(file=fr["file"], src=fr["src"], video=fr["video"], width=any_d.get("width"), height=any_d.get("height"),
-                       box=box.tolist(), points=pts, attrs=attrs, annotator=a.consensus_name, n_raters=len(keep),
+                       box=box.tolist(), points=pts, scheme=2, attrs=attrs, annotator=a.consensus_name, n_raters=len(keep),
                        flagged=bool(flags), flags=flags),
                   open(os.path.join(out_cons, fr["file"] + ".json"), "w"), indent=1)
         row.update(status="flagged" if flags else "agreed", flags="; ".join(flags))
@@ -161,7 +166,7 @@ def main():
                 for k in PTS:
                     p = d["points"].get(k)
                     if p is not None:
-                        cv2.circle(vis, (int(p[0]), int(p[1])), {"tip": 5, "spring": 4, "coil": 3}[k], COLS[c % len(COLS)], -1)
+                        cv2.circle(vis, (int(p[0]), int(p[1])), {"tip": 5, "head": 4, "back": 3}[k], COLS[c % len(COLS)], -1)
             crop = cv2.resize(vis[y0:int(y0 + side), x0:int(x0 + side)], (300, 300))
             cv2.rectangle(crop, (0, 0), (300, 34), (0, 0, 0), -1)
             cv2.putText(crop, f"#{i + 1} {'; '.join(flags)[:44]}", (3, 13), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (0, 255, 255), 1)

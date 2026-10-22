@@ -28,6 +28,8 @@ def main():
     with zipfile.ZipFile(zp, "w", zipfile.ZIP_DEFLATED) as z:
         for fn in sorted(os.listdir(KIT)):
             p = os.path.join(KIT, fn)
+            if fn.endswith(".py"):
+                continue
             if fn.endswith(".bat"):                       # cmd.exe needs CRLF for labels / goto
                 txt = open(p, encoding="utf-8").read().replace("\r\n", "\n").replace("\n", "\r\n")
                 z.writestr(f"{name}/{fn}", txt)
@@ -35,6 +37,7 @@ def main():
                 z.write(p, f"{name}/{fn}")
         z.write(REF_IMG, f"{name}/referencia_puntos.jpg")
         z.write(os.path.join(HERE, "annotate_tool.py"), f"{name}/pose_train/annotate_tool.py")
+        z.write(os.path.join(HERE, "real_points.py"), f"{name}/pose_train/real_points.py")
         z.write(os.path.join(ROOT, "real_eval", "frames.json"), f"{name}/real_eval/frames.json")
         for fn in frames:
             z.write(os.path.join(frames_dir, fn), f"{name}/real_eval/frames/{fn}")
