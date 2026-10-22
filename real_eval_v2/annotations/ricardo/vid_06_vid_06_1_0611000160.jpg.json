@@ -1,0 +1,34 @@
+{
+ "file": "vid_06_vid_06_1_0611000160.jpg",
+ "src": "vid_06\\vid_06\\1\\0611000160.jpg",
+ "video": "vid_06",
+ "width": 1920,
+ "height": 1080,
+ "box": [
+  955.0,
+  353.0,
+  323.0,
+  381.0
+ ],
+ "points": {
+  "tip": [
+   960.9673333333334,
+   369.3406666666666
+  ],
+  "head": [
+   1176.1053333333334,
+   607.762
+  ],
+  "back": null
+ },
+ "scheme": 2,
+ "attrs": {
+  "held": false,
+  "open": false,
+  "occluded": false,
+  "blurry": false,
+  "multi": false
+ },
+ "annotator": "ricardo",
+ "box_prefilled": true
+}

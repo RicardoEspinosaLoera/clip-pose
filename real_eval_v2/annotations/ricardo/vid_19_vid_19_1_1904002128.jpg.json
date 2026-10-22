@@ -1,0 +1,37 @@
+{
+ "file": "vid_19_vid_19_1_1904002128.jpg",
+ "src": "vid_19\\vid_19\\1\\1904002128.jpg",
+ "video": "vid_19",
+ "width": 1920,
+ "height": 1080,
+ "box": [
+  932.0,
+  508.0,
+  448.0,
+  370.0
+ ],
+ "points": {
+  "tip": [
+   1083.6,
+   520.8
+  ],
+  "head": [
+   1303.2,
+   930.0
+  ],
+  "back": [
+   1242.0,
+   820.8
+  ]
+ },
+ "scheme": 2,
+ "attrs": {
+  "held": true,
+  "open": true,
+  "occluded": true,
+  "blurry": false,
+  "multi": false
+ },
+ "annotator": "ricardo",
+ "box_prefilled": true
+}

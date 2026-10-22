@@ -1,0 +1,37 @@
+{
+ "file": "vid_11_vid_11_1_1111001313.jpg",
+ "src": "vid_11\\vid_11\\1\\1111001313.jpg",
+ "video": "vid_11",
+ "width": 1920,
+ "height": 1080,
+ "box": [
+  1080.0,
+  756.0,
+  455.0,
+  295.0
+ ],
+ "points": {
+  "tip": [
+   1227.4566666666667,
+   671.3022222222222
+  ],
+  "head": [
+   1304.6155555555556,
+   902.7788888888889
+  ],
+  "back": [
+   1277.9344444444446,
+   825.62
+  ]
+ },
+ "scheme": 2,
+ "attrs": {
+  "held": true,
+  "open": true,
+  "occluded": false,
+  "blurry": false,
+  "multi": false
+ },
+ "annotator": "ricardo",
+ "box_prefilled": true
+}

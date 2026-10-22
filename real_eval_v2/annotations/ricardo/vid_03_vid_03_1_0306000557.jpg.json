@@ -1,0 +1,34 @@
+{
+ "file": "vid_03_vid_03_1_0306000557.jpg",
+ "src": "vid_03\\vid_03\\1\\0306000557.jpg",
+ "video": "vid_03",
+ "width": 1920,
+ "height": 1080,
+ "box": [
+  983.0,
+  211.0,
+  366.0,
+  245.0
+ ],
+ "points": {
+  "tip": [
+   985.1999999999999,
+   488.4
+  ],
+  "head": [
+   974.4,
+   507.59999999999997
+  ],
+  "back": null
+ },
+ "scheme": 2,
+ "attrs": {
+  "held": false,
+  "open": false,
+  "occluded": true,
+  "blurry": false,
+  "multi": false
+ },
+ "annotator": "ricardo",
+ "box_prefilled": true
+}
