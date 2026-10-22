@@ -43,7 +43,16 @@ WINDOW_MARGIN = {"points": 1.75, "union": 1.5, "box": 1.5}
 
 
 def auto_window(ann):
-    return "box" if ann.get("scheme", 1) >= 2 else "union"
+    """Scheme 2: the box if it contains all points (it then frames the whole clip), else the points
+    (the first scheme-2 round kept the pre-loaded detector box in every frame; 35/152 missed points,
+    while the scheme-2 points are consistent: back end within 0.7 deg of the tip-head line).
+    Scheme 1: box U points (its points often did not span the clip)."""
+    if ann.get("scheme", 1) < 2:
+        return "union"
+    x, y, w, h = ann["box"]
+    pts = [v for v in norm_points(ann["points"]).values() if v is not None]
+    inside = all(x - 0.05 * w <= q[0] <= x + 1.05 * w and y - 0.05 * h <= q[1] <= y + 1.05 * h for q in pts)
+    return "box" if inside else "points"
 
 
 def crop_window(box, pts, mode="points"):
