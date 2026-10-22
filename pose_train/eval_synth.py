@@ -42,6 +42,7 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--batch", type=int, default=16)
     ap.add_argument("--workers", type=int, default=4)
+    ap.add_argument("--jaw-step", type=float, default=6.0, help="jaw-angle grid of the PnP search, 0..20 deg (6 = original 0/6/12/18)")
     ap.add_argument("--image-suffix", default="", help='"_flat" evaluates on the flat renders (ablation A0)')
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
@@ -76,7 +77,7 @@ def main():
                     pc = pts * (512 / 128)
                     vis = b["vis"][i].numpy() > 0
                     row["kp_px"] = float(np.linalg.norm(pc[vis] - b["kp"][i].numpy()[vis], axis=1).mean() / s) if vis.any() else np.nan
-                    res = pose_pnp_jawsearch(pc, conf, cm, Kc)
+                    res = pose_pnp_jawsearch(pc, conf, cm, Kc, jaws=tuple(np.arange(0.0, 20.0 + 1e-6, a.jaw_step)))
                     res_gt = pose_pnp(pc, conf, cm.keypoints3d(jaw), Kc)
                     if res_gt is not None:
                         row["rot_deg_gtjaw"] = rot_err(res_gt[0], Rg, R_sym)
