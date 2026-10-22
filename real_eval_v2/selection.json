@@ -1,0 +1,34 @@
+{
+ "criteria": {
+  "shape": "straight",
+  "occluded": false,
+  "per_video": 20,
+  "hamming": 12
+ },
+ "triaged": 1743,
+ "shapes": {
+  "straight": 687,
+  "bent": 38,
+  "curved": 72,
+  "discard": 946
+ },
+ "straight_occluded": 0,
+ "selected": 200,
+ "per_video": {
+  "vid_00": 20,
+  "vid_02": 8,
+  "vid_03": 2,
+  "vid_05": 10,
+  "vid_06": 20,
+  "vid_07": 11,
+  "vid_08": 20,
+  "vid_09": 9,
+  "vid_11": 20,
+  "vid_12": 14,
+  "vid_13": 12,
+  "vid_15": 16,
+  "vid_17": 19,
+  "vid_19": 19
+ },
+ "from_first_set": 72
+}
