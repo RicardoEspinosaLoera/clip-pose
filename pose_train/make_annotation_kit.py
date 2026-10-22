@@ -35,7 +35,6 @@ def main():
                 z.writestr(f"{name}/{fn}", txt)
             else:
                 z.write(p, f"{name}/{fn}")
-        z.write(REF_IMG, f"{name}/referencia_puntos.jpg")
         z.write(os.path.join(HERE, "annotate_tool.py"), f"{name}/pose_train/annotate_tool.py")
         z.write(os.path.join(HERE, "real_points.py"), f"{name}/pose_train/real_points.py")
         z.write(os.path.join(ROOT, "real_eval", "frames.json"), f"{name}/real_eval/frames.json")
