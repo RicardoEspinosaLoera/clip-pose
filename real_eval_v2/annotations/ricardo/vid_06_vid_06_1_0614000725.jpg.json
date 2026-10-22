@@ -15,16 +15,16 @@
    805.1213333333333,
    253.21866666666668
   ],
-  "head": [
+  "back": [
    889.396,
    224.23733333333334
   ],
-  "back": [
+  "coil": [
    852.788,
    236.44
   ]
  },
- "scheme": 2,
+ "scheme": 3,
  "attrs": {
   "held": false,
   "open": false,
@@ -33,5 +33,6 @@
   "multi": false
  },
  "annotator": "ricardo",
- "box_prefilled": true
+ "box_prefilled": true,
+ "note": "converted from scheme 2: 2nd click = back end, 3rd click = spring centre (annotator, 2026-10-22)"
 }

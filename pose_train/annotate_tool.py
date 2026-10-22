@@ -15,7 +15,7 @@ Workflow per frame
 Keys
   left click : next point            u : undo last point       r : reset frame (box pre-loaded again)
   c          : clear box, click a new one                      z : toggle zoom / full frame
-  x          : back end hidden (skips the third point)
+  x          : spring centre not visible (skips the third point)
   e          : EXCLUDE frame (no clip, or clip impossible to annotate) -> saved as excluded, then next
   h / o / p / b / m : held / open / occluded / blurry / more than one clip in the frame
   several clips: annotate ONE -> the one held by the applier; else the pre-loaded box if it is a clip; else the most visible
@@ -35,9 +35,9 @@ from real_points import norm_points, KEYS
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.normpath(os.path.join(HERE, "..", "real_eval"))
-STEPS = ["box corner 1", "box corner 2", "1 jaw TIP (end of the jaws)", "2 clip HEAD centre (blue body)",
-         "3 BACK end (x = hidden)"]
-COLS = [(0, 255, 255), (0, 255, 255), (0, 0, 255), (255, 128, 0), (255, 0, 255)]   # tip red, head blue, back magenta
+STEPS = ["box corner 1", "box corner 2", "1 jaw TIP (end of the jaws)", "2 BACK end (end of the blue head)",
+         "3 SPRING centre (x = not visible)"]
+COLS = [(0, 255, 255), (0, 255, 255), (0, 0, 255), (255, 128, 0), (255, 0, 255)]   # tip red, back end blue, spring magenta
 VIEW_W, VIEW_H = 1600, 900
 ZOOM_MARGIN = 2.2          # zoom window = box size x margin (keeps context around the clip)
 
@@ -107,7 +107,7 @@ def load_previous(path):
     x, y, w, h = d["box"]
     st = State(prefill=False)
     P = norm_points(d["points"])
-    st.pts = [(x, y), (x + w, y + h)] + [tuple(P[k]) if P[k] is not None else None for k in KEYS]
+    st.pts = [(x, y), (x + w, y + h)] + [tuple(P[k]) if P[k] is not None else None for k in ("tip", "back", "head")]
     st.attrs = dict(dict(held=False, open=False, occluded=False, blurry=False, multi=False), **d["attrs"])
     return st
 
@@ -180,8 +180,8 @@ def main():
                     (x0, y0), (x1, y1) = st.pts[0], st.pts[1]
                     rec = dict(file=fr["file"], src=fr["src"], video=fr["video"], width=W, height=H,
                                box=[min(x0, x1), min(y0, y1), abs(x1 - x0), abs(y1 - y0)],
-                               points={"tip": list(st.pts[2]), "head": list(st.pts[3]),
-                                       "back": list(st.pts[4]) if st.pts[4] is not None else None}, scheme=2,
+                               points={"tip": list(st.pts[2]), "back": list(st.pts[3]),
+                                       "coil": list(st.pts[4]) if st.pts[4] is not None else None}, scheme=3,
                                attrs=st.attrs, annotator=a.annotator, box_prefilled=hint is not None)
                     json.dump(rec, open(prev, "w"), indent=1)
                 elif k in (ord("n"), ord(" ")) and len(st.pts) > 2:

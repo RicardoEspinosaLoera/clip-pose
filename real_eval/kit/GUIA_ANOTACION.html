@@ -44,9 +44,9 @@
 <table>
   <tr><th>Paso</th><th>Qué marcar</th><th>Regla</th></tr>
   <tr><td>Caja</td><td>Rectángulo alrededor de la cabeza y las mandíbulas</td><td>Viene precargada en amarillo, <b>revísala siempre</b>: muchas no encierran el clip completo o están sobre otra cosa. Si no está bien, pulsa <kbd>c</kbd> y haz dos clics en esquinas opuestas. No incluyas el colocador.</td></tr>
-  <tr><td>1. Punta</td><td>Extremo libre de las mandíbulas</td><td>Donde termina físicamente el metal oscuro, en la línea central. No el último píxel borroso ni un reflejo.</td></tr>
-  <tr><td>2. Cabeza</td><td>Centro de la cabeza azul</td><td>El centro del cuerpo azul del clip, aunque el colocador tape una parte.</td></tr>
-  <tr><td>3. Extremo trasero</td><td>Final del clip, opuesto a la punta</td><td>Solo si se ve. Si está dentro del colocador o tapado, pulsa <kbd>x</kbd>. Es normal en muchos frames.</td></tr>
+  <tr><td>1. Punta</td><td>Extremo final de las mandíbulas</td><td>Donde termina físicamente el metal oscuro, en la línea central. No el último píxel borroso ni un reflejo.</td></tr>
+  <tr><td>2. Extremo trasero</td><td>Extremo final de la cabeza azul</td><td>El final del clip, opuesto a la punta. Si el colocador lo tapa, estímalo y pulsa <kbd>p</kbd>.</td></tr>
+  <tr><td>3. Centro del resorte</td><td>Centro del resorte, dentro de la cabeza</td><td>Solo si se distingue. Si no, pulsa <kbd>x</kbd>. En un clip recto los tres puntos quedan casi en línea.</td></tr>
 </table>
 
 <h2>3. Casos difíciles</h2>
@@ -56,7 +56,7 @@
   <tr><td>Borde borroso</td><td>Marca a mitad de la transición entre el color del clip y el fondo. Si todo el clip está borroso, pulsa <kbd>b</kbd>.</td></tr>
   <tr><td>Una punta tapada, la otra visible</td><td>Cerradas: la punta visible vale. Abiertas: estima la tapada siguiendo su mandíbula y marca el punto medio. Pulsa <kbd>p</kbd>.</td></tr>
   <tr><td>Punta tapada del todo (tejido, sangre, colocador)</td><td>Si puedes inferirla por la dirección y el largo del clip, estímala y pulsa <kbd>p</kbd>. Si no hay forma, excluye el frame con <kbd>e</kbd>.</td></tr>
-  <tr><td>El colocador sujeta el clip</td><td>Pulsa <kbd>h</kbd>. Marca la punta y el centro de la cabeza; el extremo trasero suele quedar dentro del colocador: pulsa <kbd>x</kbd>.</td></tr>
+  <tr><td>El colocador sujeta el clip</td><td>Pulsa <kbd>h</kbd>. El extremo trasero suele quedar dentro del colocador: estímalo siguiendo la cabeza y pulsa <kbd>p</kbd>. Si el resorte no se ve, <kbd>x</kbd>.</td></tr>
   <tr><td>Más de un clip</td><td>Anota solo uno: el que sujeta el colocador; si ninguno, el de la caja precargada; si no, el más visible. Pulsa <kbd>m</kbd>.</td></tr>
   <tr><td>No hay clip, o es imposible anotarlo</td><td>Pulsa <kbd>e</kbd>. El frame queda excluido y pasa al siguiente.</td></tr>
 </table>
@@ -68,12 +68,12 @@
   <tr><td><kbd>u</kbd></td><td>deshace el último punto</td><td><kbd>o</kbd></td><td>mandíbulas abiertas</td></tr>
   <tr><td><kbd>r</kbd></td><td>reinicia el frame</td><td><kbd>p</kbd></td><td>parcialmente ocluido</td></tr>
   <tr><td><kbd>c</kbd></td><td>dibujar otra caja</td><td><kbd>b</kbd></td><td>borroso</td></tr>
-  <tr><td><kbd>x</kbd></td><td>extremo trasero no visible</td><td><kbd>m</kbd></td><td>más de un clip</td></tr>
+  <tr><td><kbd>x</kbd></td><td>centro del resorte no visible</td><td><kbd>m</kbd></td><td>más de un clip</td></tr>
   <tr><td><kbd>z</kbd></td><td>zoom / frame completo</td><td><kbd>e</kbd></td><td>excluir el frame</td></tr>
   <tr><td><kbd>n</kbd> o espacio</td><td>guarda y siguiente</td><td>retroceso</td><td>guarda y anterior</td></tr>
   <tr><td><kbd>q</kbd></td><td>guarda y sale</td><td></td><td></td></tr>
 </table>
-<p>Los atributos se activan y desactivan con la misma tecla; su estado se ve en la barra superior. Un frame solo se guarda cuando tiene caja y los tres puntos (o punta y cabeza más <kbd>x</kbd>). Si pulsas <kbd>n</kbd> a medias, la consola avisa que no se guardó.</p>
+<p>Los atributos se activan y desactivan con la misma tecla; su estado se ve en la barra superior. Un frame solo se guarda cuando tiene caja y los tres puntos (o punta y extremo trasero más <kbd>x</kbd>). Si pulsas <kbd>n</kbd> a medias, la consola avisa que no se guardó.</p>
 <p>Para revisar un frame concreto, cierra con <kbd>q</kbd> y ábrelo con su número, por ejemplo el 37:</p>
 <pre>python pose_train/annotate_tool.py --annotator TU_NOMBRE --start 37</pre>
 

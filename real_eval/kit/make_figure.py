@@ -181,12 +181,12 @@ def main():
     img = Image.new("RGB", (W, H), (246, 246, 249))
     d = ImageDraw.Draw(img)
     d.text((24 * SS, 18 * SS), "Cómo anotar el clip en los frames reales", font=font(34, True), fill=INK)
-    d.text((780 * SS, 30 * SS), "Esquema, no a escala. Orden de clics: caja (si hay que corregirla) → 1 punta → 2 cabeza → 3 extremo trasero",
+    d.text((780 * SS, 30 * SS), "Esquema, no a escala. Orden de clics: caja (si hay que corregirla) → 1 punta → 2 extremo trasero → 3 centro del resorte",
            font=font(17), fill=MUTED)
 
     # 1. parts
     ar = Art(panel(img, d, 0, "1. Partes del clip",
-                   ["Cabeza azul: el cuerpo del clip (titanio anodizado),", "  donde está el resorte. Suele tenerla el colocador.",
+                   ["Cabeza azul: el cuerpo del clip (titanio anodizado),", "  con el resorte dentro. Suele tenerla el colocador.",
                     "Mandíbulas: las dos hojas oscuras que cierran", "  el cuello del aneurisma. La punta es su extremo libre."]))
     a, A = ar.d, ar.A
     a.ellipse([*A(405, 85), *A(530, 245)], fill=DOME)
@@ -203,20 +203,20 @@ def main():
     # 2. what to mark
     ar = Art(panel(img, d, 1, "2. Qué marcar",
                    ["Caja amarilla: cabeza + mandíbulas, sin el colocador.", "  Si la precargada no los encierra: c y dos esquinas.",
-                    "1 Punta  ·  2 Centro de la cabeza azul", "3 Extremo trasero: solo si se ve; si no, tecla x."]))
+                    "1 Punta  ·  2 Extremo final de la cabeza", "3 Centro del resorte: solo si se ve; si no, tecla x."]))
     a, A = ar.d, ar.A
     c = Clip(*A(225, 170), ang=-14)
     c.draw(a)
     dashed_rect(a, c.bbox(), YELLOW)
     _, _, tip = c.tip_points()
     hc, be = c.head_centre(), c.back_end()
-    a.line([hc, tip], fill=(255, 255, 255), width=3 * SS)
+    a.line([be, tip], fill=(255, 255, 255), width=3 * SS)
     dot(a, tip, RED)
-    dot(a, hc, BLUE)
-    dot(a, be, MAG, hollow=True)
+    dot(a, be, BLUE)
+    dot(a, hc, MAG, hollow=True)
     label(a, tip, "1 punta", A(420, 70), col=RED, bold=True)
-    label(a, hc, "2 cabeza", A(250, 268), col=BLUE, bold=True)
-    label(a, be, "3 trasero (x si oculto)", A(15, 268), col=MAG, bold=True)
+    label(a, be, "2 extremo trasero", A(15, 268), col=BLUE, bold=True)
+    label(a, hc, "3 resorte (x si no se ve)", A(255, 268), col=MAG, bold=True)
     ar.paste(img)
 
     # 3. open jaws
@@ -274,7 +274,7 @@ def main():
     # 6. common mistakes
     ar = Art(panel(img, d, 5, "6. Errores frecuentes",
                    [("No", BAD, "dejar la caja precargada sin revisar."), ("No", BAD, "punta sobre el aneurisma si las mandíbulas no van ahí."),
-                    ("No", BAD, "extremo trasero en el fondo."), ("Sí", OK, "ante la duda: estima, pulsa p y anota el n.º de frame.")]))
+                    ("No", BAD, "extremo trasero en el fondo o fuera del clip."), ("Sí", OK, "ante la duda: estima, pulsa p y anota el n.º de frame.")]))
     a, A = ar.d, ar.A
     a.ellipse([*A(330, 25), *A(520, 185)], fill=DOME)
     c = Clip(*A(190, 195), ang=12, s=0.95)
@@ -285,7 +285,7 @@ def main():
     dot(a, wt, RED)
     cross(a, (wt[0] + 26 * SS, wt[1] - 22 * SS), r=10)
     wb = A(45, 70)
-    dot(a, wb, MAG)
+    dot(a, wb, BLUE)
     cross(a, (wb[0] + 26 * SS, wb[1] - 22 * SS), r=10)
     label(a, None, "caja sobre otra cosa", A(300, 20), col=BAD, size=16, line=False)
     label(a, None, "punta en el aneurisma", A(330, 170), col=BAD, size=16, line=False)
@@ -296,7 +296,7 @@ def main():
     # key strip
     y = 1096 * SS
     d.rounded_rectangle([24 * SS, y, 1776 * SS, y + 66 * SS], radius=12 * SS, fill=(30, 32, 40))
-    keys = [("clic", "1 punta · 2 cabeza · 3 trasero"), ("x", "trasero no visible"), ("c", "caja nueva"), ("o", "abierto"), ("h", "colocador"),
+    keys = [("clic", "1 punta · 2 trasero · 3 resorte"), ("x", "resorte no visible"), ("c", "caja nueva"), ("o", "abierto"), ("h", "colocador"),
             ("p", "ocluido"), ("b", "borroso"), ("m", "varios clips"), ("e", "sin clip"), ("n", "guardar y seguir")]
     x = 40 * SS
     for k, t in keys:

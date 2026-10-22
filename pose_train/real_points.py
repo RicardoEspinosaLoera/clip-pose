@@ -1,13 +1,16 @@
 """
-real_points.py — the three annotated points of a real MACS frame (annotation scheme 2, 2026-10-21):
+real_points.py — the three annotated points of a real MACS frame. Canonical keys:
 
-  tip   end of the jaws (midpoint of the two jaw tips when open)          required
-  head  centre of the clip head (blue anodised body, spring housing)     required
-  back  back end of the clip, opposite the tip                           optional (None = hidden)
+  tip   end of the jaws (midpoint of the two jaw tips when open)        click 1, required
+  back  back end of the clip = end of the blue head                     click 2, required
+  head  centre of the spring (coil) inside the head                     click 3, optional (None = not visible)
 
-Clip axis = tip -> head (both nearly always visible); clip length L = |tip - head|.
-Scheme 1 files (tip, spring = back end, coil = coil centre) are read as head = coil, back = spring;
-their axis falls back to tip -> back when the coil was marked not visible.
+Clip axis and length L = tip -> back (spans the whole clip); fallback tip -> head.
+Files on disk:
+  scheme 3 (official, 2026-10-22): points {tip, back, coil}
+  scheme 2 (2026-10-21, 'head' = 2nd click, 'back' = 3rd click): the reference annotator clicked
+           back end 2nd and spring centre 3rd, so it is read as back = 'head', head = 'back'
+  scheme 1 (first round): points {tip, spring = back end, coil = coil centre}
 Synthetic M1 keypoints map as tip = mean(tip_a, tip_b), head = coil_centre, back = spring.
 """
 
@@ -18,15 +21,17 @@ SYNTH_MAP = {"tip": ("tip_a", "tip_b"), "head": ("coil_centre",), "back": ("spri
 
 
 def norm_points(points):
-    """Annotation 'points' dict (either scheme) -> {tip, head, back} with None for missing."""
-    if "head" in points or "back" in points:
-        return {k: points.get(k) for k in KEYS}
-    return {"tip": points.get("tip"), "head": points.get("coil"), "back": points.get("spring")}
+    """Annotation 'points' dict (any scheme) -> {tip, head, back} with None for missing."""
+    if "spring" in points:                                        # scheme 1
+        return {"tip": points.get("tip"), "head": points.get("coil"), "back": points.get("spring")}
+    if "coil" in points:                                          # scheme 3
+        return {"tip": points.get("tip"), "head": points.get("coil"), "back": points.get("back")}
+    return {"tip": points.get("tip"), "head": points.get("back"), "back": points.get("head")}   # scheme 2 (clicks 3, 2)
 
 
 def axis_key(pts):
-    """Second point of the clip axis: head when present, else back."""
-    return "head" if pts.get("head") is not None else "back"
+    """Second point of the clip axis: the back end when present, else the spring centre."""
+    return "back" if pts.get("back") is not None else "head"
 
 
 def clip_length(pts):
