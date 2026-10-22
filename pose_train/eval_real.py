@@ -29,7 +29,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from dataset import ClipModel, decode_heatmaps, IMAGENET_MEAN, IMAGENET_STD
 from model import KeypointNet
-from real_points import KEYS, SYNTH_MAP, norm_points, axis_key
+from real_points import KEYS, SYNTH_MAP, norm_points, axis_key, crop_window, WINDOW_MARGIN, auto_window
 
 
 def main():
@@ -39,7 +39,9 @@ def main():
     ap.add_argument("--ckpt", required=True)
     ap.add_argument("--arch", default="resnet34")
     ap.add_argument("--crop", type=int, default=512)
-    ap.add_argument("--margin", type=float, default=1.5)
+    ap.add_argument("--margin", type=float, default=None, help="default: 1.75 for points, 1.5 for box / union")
+    ap.add_argument("--window", choices=["auto", "points", "union", "box"], default="auto",
+                    help="crop window source; auto = box for scheme-2 annotations, box U points for scheme 1")
     ap.add_argument("--out", required=True)
     ap.add_argument("--n-montage", type=int, default=30)
     a = ap.parse_args()
@@ -59,11 +61,10 @@ def main():
         img = cv2.imread(os.path.join(a.frames, ann["file"]))
         if img is None:
             continue
-        x, y, w, h = ann["box"]
-        P = np.array([v for v in norm_points(ann["points"]).values() if v is not None], float)   # union with the points:
-        x0, y0 = min(x, P[:, 0].min()), min(y, P[:, 1].min())                       # the box can miss the clip
-        x, y, w, h = x0, y0, max(x + w, P[:, 0].max()) - x0, max(y + h, P[:, 1].max()) - y0
-        cx, cy, side = x + w / 2, y + h / 2, max(64.0, a.margin * max(w, h))
+        P = np.array([v if v is not None else [np.nan, np.nan] for v in norm_points(ann["points"]).values()], float)
+        mode = auto_window(ann) if a.window == "auto" else a.window
+        cx, cy, side = crop_window(ann["box"], P, mode)
+        side = max(64.0, (a.margin or WINDOW_MARGIN[mode]) * side)
         s = a.crop / side
         A = np.array([[s, 0, a.crop / 2 - s * cx], [0, s, a.crop / 2 - s * cy]], np.float64)
         crop = cv2.warpAffine(img, A, (a.crop, a.crop), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT_101)

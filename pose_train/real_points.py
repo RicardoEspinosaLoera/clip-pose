@@ -31,3 +31,30 @@ def axis_key(pts):
 
 def clip_length(pts):
     return float(np.linalg.norm(np.subtract(pts["tip"], pts[axis_key(pts)])))
+
+
+# Crop window for real frames. "box": the annotated box = whole clip incl. jaws, exactly what the
+# synthetic training crop is built from (1.5 x mask bbox) -> default for scheme-2 annotations, whose box
+# is always reviewed. "union": box U points, for scheme-1 annotations (their pre-loaded detector boxes
+# were never corrected and often missed the clip). "points": square around the points (margin 1.75 =
+# 1.5 x the synthetic mask-side / point-extent ratio 1.15); only valid if the points span the clip,
+# which scheme-1 points often did not.
+WINDOW_MARGIN = {"points": 1.75, "union": 1.5, "box": 1.5}
+
+
+def auto_window(ann):
+    return "box" if ann.get("scheme", 1) >= 2 else "union"
+
+
+def crop_window(box, pts, mode="points"):
+    """box (x, y, w, h), pts (N, 2) with NaN rows allowed -> (cx, cy, side) before the margin."""
+    p = np.asarray(pts, float)
+    p = p[~np.isnan(p[:, 0])]
+    if mode == "box" or len(p) == 0:
+        x, y, w, h = box
+        return x + w / 2, y + h / 2, max(w, h)
+    x0, y0, x1, y1 = p[:, 0].min(), p[:, 1].min(), p[:, 0].max(), p[:, 1].max()
+    if mode == "union":
+        x, y, w, h = box
+        x0, y0, x1, y1 = min(x0, x), min(y0, y), max(x1, x + w), max(y1, y + h)
+    return (x0 + x1) / 2, (y0 + y1) / 2, max(x1 - x0, y1 - y0)

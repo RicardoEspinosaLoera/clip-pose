@@ -41,18 +41,8 @@ sys.path.insert(0, HERE)
 from dataset import decode_heatmaps, IMAGENET_MEAN, IMAGENET_STD, ClipPoseDataset
 from model import KeypointNet, heatmap_loss
 
-from real_points import KEYS as REAL, SYNTH_MAP, norm_points
+from real_points import KEYS as REAL, SYNTH_MAP, norm_points, crop_window, WINDOW_MARGIN, auto_window
 ATTRS = ("held", "open", "occluded", "blurry", "multi")
-
-
-def clip_window(box, pts):
-    """Clip region = union of the annotated box and the annotated points (the pre-loaded detector box can
-    miss the clip or cut the jaws; the points are the reliable part of the annotation)."""
-    x, y, w, h = box
-    p = pts[~np.isnan(pts[:, 0])]
-    x0, y0 = min(x, p[:, 0].min()), min(y, p[:, 1].min())
-    x1, y1 = max(x + w, p[:, 0].max()), max(y + h, p[:, 1].max())
-    return x0, y0, x1 - x0, y1 - y0
 
 
 def load_items(frames_dir, ann_dir):
@@ -67,7 +57,7 @@ def load_items(frames_dir, ann_dir):
         P = norm_points(d["points"])
         pts = np.array([P[k] if P[k] is not None else [np.nan, np.nan] for k in REAL], np.float64)
         items.append(dict(file=d["file"], video=d.get("video") or d["file"][:6], img=img, box=np.array(d["box"], float),
-                          pts=pts, attrs={k: bool(d.get("attrs", {}).get(k, False)) for k in ATTRS}))
+                          pts=pts, window=auto_window(d), attrs={k: bool(d.get("attrs", {}).get(k, False)) for k in ATTRS}))
     return items
 
 
@@ -82,7 +72,8 @@ def make_folds(items, n_folds):
 
 
 class RealKP(Dataset):
-    def __init__(self, items, idx, train, crop=512, heat=128, sigma=2.0, margin=1.5, seed=0):
+    def __init__(self, items, idx, train, crop=512, heat=128, sigma=2.0, margin=None, seed=0, window="auto"):
+        self.window = window
         self.items, self.idx, self.train = items, list(idx), train
         self.crop, self.heat, self.sigma, self.margin = crop, heat, sigma, margin
         self.seed = seed
@@ -91,8 +82,9 @@ class RealKP(Dataset):
         return len(self.idx)
 
     def affine(self, it, rng):
-        x, y, w, h = clip_window(it["box"], it["pts"])
-        cx, cy, side = x + w / 2, y + h / 2, self.margin * max(w, h)
+        mode = it["window"] if self.window == "auto" else self.window
+        cx, cy, side = crop_window(it["box"], it["pts"], mode)
+        side *= self.margin or WINDOW_MARGIN[mode]
         theta, flip = 0.0, False
         if self.train:
             side *= rng.uniform(0.85, 1.15)
@@ -237,6 +229,8 @@ def main():
     ap.add_argument("--warmup", type=int, default=100)
     ap.add_argument("--workers", type=int, default=2)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--window", choices=["auto", "points", "union", "box"], default="auto",
+                    help="crop window source; auto = box for scheme-2 annotations, box U points for scheme 1")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
     if a.init == "synthetic" and not a.ckpt:
@@ -258,8 +252,8 @@ def main():
         model = build_model(a.init, a.ckpt, a.arch).to(device)
         if a.iters > 0:
             print(f"  fold {f}: train {len(train_idx)} frames, test {len(test_idx)} ({sorted({items[i]['video'] for i in test_idx})})", flush=True)
-            train_fold(model, RealKP(items, train_idx, True), a, device)
-        preds = predict(model, RealKP(items, test_idx, False, seed=a.seed), device)
+            train_fold(model, RealKP(items, train_idx, True, window=a.window), a, device)
+        preds = predict(model, RealKP(items, test_idx, False, seed=a.seed, window=a.window), device)
         rows += [frame_row(items[i], preds[i][0], f) for i in test_idx]
     keys = sorted({k for r in rows for k in r})
     with open(os.path.join(a.out, "per_frame.csv"), "w", newline="") as fh:
