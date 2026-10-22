@@ -113,11 +113,14 @@ def load_previous(path):
 
 
 def main():
+    global OUT
     ap = argparse.ArgumentParser()
     ap.add_argument("--annotator", required=True)
+    ap.add_argument("--root", default=None, help="frame-set folder (frames.json, frames/); default ../real_eval")
     ap.add_argument("--start", type=int, default=None, help="open frame N (1-based, as shown in the window), annotated or not")
     ap.add_argument("--no-prefill", action="store_true", help="do not pre-load the detector box")
     a = ap.parse_args()
+    OUT = os.path.abspath(a.root) if a.root else OUT
     frames = json.load(open(os.path.join(OUT, "frames.json")))
     out_dir = os.path.join(OUT, "annotations", a.annotator)
     os.makedirs(out_dir, exist_ok=True)
