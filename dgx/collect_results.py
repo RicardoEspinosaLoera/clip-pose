@@ -16,11 +16,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--runs", required=True)
     ap.add_argument("--out", required=True)
+    ap.add_argument("--real-sub", default="real", help="<run>/<sub>/summary.json with the real-frame metrics (real, real_v2, ...)")
     a = ap.parse_args()
     rows, sub_rows = [], []
     for run in sorted(glob.glob(os.path.join(a.runs, "*"))):
         name = os.path.basename(run)
-        cfg_p, test_p, real_p = (os.path.join(run, f) for f in ("config.json", "test/summary.json", "real/summary.json"))
+        cfg_p, test_p, real_p = (os.path.join(run, f) for f in ("config.json", "test/summary.json", f"{a.real_sub}/summary.json"))
         if not os.path.exists(cfg_p):
             continue
         cfg = json.load(open(cfg_p))
