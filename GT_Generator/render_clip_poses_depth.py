@@ -60,7 +60,7 @@ STEM_WIDTH = int(os.environ.get("STEM_WIDTH", 3))
 # ------------------- CONFIG -------------------
 HERE = os.path.dirname(os.path.abspath(__file__))
 
-MESH_PATH    = os.path.join(HERE, "Item.obj")
+MESH_PATH    = os.environ.get("CLIP_MESH", os.path.join(HERE, "Item.obj"))   # clip mesh (env-overridable, e.g. clip_ti_std.obj from make_clip_mesh.py)
 BG_DIR       = os.environ.get("BG_DIR", os.path.join(HERE, "Data", "noclips_bank"))   # 600 clip-free real backplates (env-overridable; Data/noclips = legacy 30)
 OUT_DIR      = os.environ.get("OUT_DIR", os.path.join(HERE, "out_rand_depth"))  # output dir (env-overridable)
 N            = int(os.environ.get("N_SAMPLES", 5000))   # number of samples (override via N_SAMPLES env)

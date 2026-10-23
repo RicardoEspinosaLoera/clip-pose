@@ -30,7 +30,11 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from articulate_clip import articulate, pca_frame
 
-MESH = pv.read(os.path.join(HERE, "Item.obj"))
+MESH_FILE = os.environ.get("CLIP_MESH", os.path.join(HERE, "Item.obj"))   # env-overridable (e.g. clip_ti_std.obj)
+MESH_NAME = os.path.basename(MESH_FILE)
+# Item.obj keeps the historical keypoints.json; any other mesh gets keypoints_<stem>.json
+OUT_JSON = os.path.join(HERE, "keypoints.json" if MESH_NAME == "Item.obj" else f"keypoints_{os.path.splitext(MESH_NAME)[0]}.json")
+MESH = pv.read(MESH_FILE)
 V0 = np.asarray(MESH.points, np.float64)
 C, E = pca_frame(V0)
 P = (V0 - C) @ E                                  # (n, 3): coordinates along e0, e1, e2
@@ -74,9 +78,10 @@ def main():
     centroid = nearest(V0.mean(0))
     names = ["tip_a", "tip_b", "hinge", "spring", "coil_centre", "body_a", "body_b", "centroid"]
     idx = [tip_a, tip_b, hinge, spring, coil_centre, body_a, body_b, centroid]
-    out = dict(mesh="Item.obj", names=names, indices=idx, symmetric_pairs=[[0, 1], [5, 6]],
-               separation_axis=f"e{sep_axis}", note="indices into Item.obj vertices; articulate() moves them with the jaws")
-    json.dump(out, open(os.path.join(HERE, "keypoints.json"), "w"), indent=2)
+    out = dict(mesh=MESH_NAME, names=names, indices=idx, symmetric_pairs=[[0, 1], [5, 6]],
+               separation_axis=f"e{sep_axis}", note=f"indices into {MESH_NAME} vertices; articulate() moves them with the jaws")
+    json.dump(out, open(OUT_JSON, "w"), indent=2)
+    print("keypoints ->", OUT_JSON)
     for n, i in zip(names, idx):
         print(f"  {n:12s} vertex {i:6d}  model {np.round(V0[i], 2)}  open20 {np.round(V20[i], 2)}")
 

@@ -29,7 +29,7 @@ import pyvista as pv
 from scipy.spatial.transform import Rotation as scipyR
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-MESH_PATH = os.path.join(HERE, "Item.obj")
+MESH_PATH = os.environ.get("CLIP_MESH", os.path.join(HERE, "Item.obj"))   # env-overridable (must match the mesh the set was rendered with)
 
 # ---- titanium-MACS material (tune these to match your real frames) ----
 # Real MACS clips are mostly a MIRROR of the warm surgical field (reddish/golden

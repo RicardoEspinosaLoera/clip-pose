@@ -17,10 +17,46 @@ CLI:  python articulate_clip.py   # renders previews at 0/15/30 deg to _articula
 """
 
 import os
+import json
 import numpy as np
 import pyvista as pv
 
 MESH_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Item.obj")
+
+
+# ---- rigid-hinge mode (true pivot clips, e.g. the Lazic L-Clip from make_lclip_mesh.py) ----------
+# A sidecar <mesh stem>.parts.json (pivot, axis, per-part vertex indices + rotation sign) switches
+# articulate() from the fan deformation to rigid rotations of each clip part about the pin axis.
+# It is found through CLIP_PARTS, or next to the mesh named by CLIP_MESH. Item.obj has none.
+_PARTS_CACHE = {}
+
+
+def _rigid_parts(n_points):
+    path = os.environ.get("CLIP_PARTS")
+    if not path and os.environ.get("CLIP_MESH"):
+        path = os.path.splitext(os.environ["CLIP_MESH"])[0] + ".parts.json"
+    if not path or not os.path.exists(path):
+        return None
+    if path not in _PARTS_CACHE:
+        with open(path) as fh:
+            _PARTS_CACHE[path] = json.load(fh)
+    parts = _PARTS_CACHE[path]
+    return parts if parts.get("n_points") == n_points else None
+
+
+def _articulate_rigid(mesh, theta_deg, parts):
+    out = mesh.copy()
+    V = out.points.astype(np.float64)
+    pivot = np.asarray(parts["pivot"], float)
+    k = np.asarray(parts["axis"], float)
+    k /= np.linalg.norm(k)
+    for part in parts["parts"]:
+        idx = np.asarray(part["indices"], int)
+        ang = np.deg2rad(theta_deg) * 0.5 * float(part["sign"])
+        p = V[idx] - pivot
+        V[idx] = pivot + p * np.cos(ang) + np.cross(k, p) * np.sin(ang) + np.outer(p @ k, k) * (1.0 - np.cos(ang))
+    out.points = V.astype(np.float32)
+    return out
 
 
 def pca_frame(V):
@@ -48,6 +84,9 @@ def articulate(mesh, theta_deg, hinge="low", pivot_frac=0.38, blend=0.12, hollow
         With hollow=True those bridging faces (mixed-blade, in the opened region) are
         deleted so the opening is empty, not filled with clip material.
     """
+    parts = _rigid_parts(mesh.n_points)
+    if parts is not None:                             # true-hinge clip: rigid rotation of each part
+        return _articulate_rigid(mesh, theta_deg, parts)
     out = mesh.copy()
     if hollow and theta_deg > 0:
         out = out.triangulate()                       # uniform triangles for face culling
@@ -93,6 +132,7 @@ def articulate(mesh, theta_deg, hinge="low", pivot_frac=0.38, blend=0.12, hollow
         bridges = (sv.min(axis=1) < 0) & (sv.max(axis=1) > 0) & (wv.min(axis=1) > 0.5)
         if bridges.any():
             kept = out.faces.reshape(-1, 4)[~bridges]
+            out.cell_data.clear()        # per-cell arrays (e.g. the OBJ reader's GroupIds) no longer match
             out.faces = kept.ravel()
     return out
 

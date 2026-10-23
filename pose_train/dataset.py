@@ -38,9 +38,12 @@ class ClipModel:
         sys.path.insert(0, GT_DIR)
         from articulate_clip import articulate, pca_frame
         self._articulate = articulate
-        self.mesh = pv.read(os.path.join(GT_DIR, "Item.obj"))
+        mesh_path = os.environ.get("CLIP_MESH", os.path.join(GT_DIR, "Item.obj"))   # must match the rendered set
+        stem = os.path.splitext(os.path.basename(mesh_path))[0]
+        kp_path = os.path.join(GT_DIR, "keypoints.json" if stem == "Item" else f"keypoints_{stem}.json")
+        self.mesh = pv.read(mesh_path)
         self.V0 = np.asarray(self.mesh.points, np.float64)
-        kp = json.load(open(os.path.join(GT_DIR, "keypoints.json")))
+        kp = json.load(open(kp_path))
         self.names = kp["names"]
         self.idx = np.asarray(kp["indices"], int)
         self.sym_pairs = kp.get("symmetric_pairs", [])

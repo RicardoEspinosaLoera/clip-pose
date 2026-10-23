@@ -42,7 +42,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from articulate_clip import pca_frame
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-MESH_PATH = os.path.join(HERE, "Item.obj")
+MESH_PATH = os.environ.get("CLIP_MESH", os.path.join(HERE, "Item.obj"))   # env-overridable (standalone runs only; the generator passes its own mesh)
 INSTRUMENT_DIR = os.path.join(HERE, "Data", "instruments")
 
 PROB = dict(tissue=0.25, applier=0.0, blood=0.35)       # 2-D applier OFF: restyle_appearance renders a 3-D one
