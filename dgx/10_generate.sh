@@ -22,6 +22,13 @@ export KEEP_FLAT APPEARANCE APPEARANCE_PRESET OCCLUDE TOOL_PROB JAW_MIN_OPEN_TOO
        AVOID_OVERLAP_MAX AVOID_MARGIN_PX BLADE_PROBE BLADE_PROBE_FRAC BLADE_PROBE_HALFW USE_DINO_AVOID DINO_BOX_THRESH DINO_DILATE FOCUS_MIN_PCT MAX_PLACE_ATTEMPTS
 PER=$(( (N_TOTAL + SHARDS - 1) / SHARDS ))
 mkdir -p "$DATA_OUT"
+n_existing=$(count_json "$DATA_OUT")
+if [ "$n_existing" -gt 0 ] && [ -z "${FORCE:-}" ]; then
+    prev_mesh=$(grep -ho '"mesh": *"[^"]*"' "$DATA_OUT"/[0-9]*.json 2>/dev/null | sort | uniq -c | sort -rn | head -1 | sed 's/.*"mesh": *//')
+    echo "REFUSING: $DATA_OUT already holds $n_existing samples (mesh ${prev_mesh:-unknown/legacy}); a run would overwrite their stems."
+    echo "          Use another DATA_OUT (e.g. DATA_OUT=$ROOT/GT_Generator/out_<name>) or FORCE=1 to rewrite the same stems on purpose."
+    exit 1
+fi
 cd "$ROOT/GT_Generator"
 echo "generate | $N_TOTAL samples | $SHARDS shards x $PER | seeds $BASE_SEED.. | GPUs $NGPU | mesh $(basename "$CLIP_MESH") | out $DATA_OUT"
 env | grep -E "^(CLIP_MESH|KEEP_FLAT|APPEARANCE|OCCLUDE|TOOL_PROB|JAW_|CLIP_FRAC|BBOX_RATIO|AVOID_|BLADE_|USE_DINO|DINO_|FOCUS_MIN|MAX_PLACE)" | sort | tr '\n' ' '; echo

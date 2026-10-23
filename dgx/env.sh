@@ -20,6 +20,7 @@ export PY
 export CLIP_MESH="${CLIP_MESH:-$ROOT/GT_Generator/clip_lazic_std.obj}"
 [ -f "$CLIP_MESH" ] || echo "[env] WARNING: CLIP_MESH not found: $CLIP_MESH (falls back to Item.obj inside the scripts)" >&2
 export DATA_OUT="${DATA_OUT:-$ROOT/GT_Generator/out_lclip}"                  # the training set (L-Clip mesh); out_v3 = old Item.obj set
+echo "[env] CLIP_MESH=$(basename "$CLIP_MESH")  DATA_OUT=$DATA_OUT  (a DATA_OUT already exported in the shell wins over the default)" >&2
 export RUNS="${RUNS:-$ROOT/pose_train/runs}"                                 # training outputs
 export LOGS="${LOGS:-$ROOT/logs}"
 export ANNOTATOR="${ANNOTATOR:-ricardo}"                                     # real_eval/annotations/<ANNOTATOR>/

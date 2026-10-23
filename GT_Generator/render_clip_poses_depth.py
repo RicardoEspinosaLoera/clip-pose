@@ -970,6 +970,7 @@ def save_pose_and_camera(tvec_obj_w, R_obj_w, camera_position, plotter_camera,
             },
             "jaw_angle_deg": float(jaw_angle_deg),   # 0 = clamping/closed, >0 = open
             "tool_held": tool_held,                  # True = applier on the spring (jaws open); None = legacy
+            "mesh": os.path.basename(MESH_PATH),     # which clip mesh was rendered (Item.obj / clip_lazic_std.obj ...)
         },
         "depth": {
             "source": "vtk_zbuffer",
