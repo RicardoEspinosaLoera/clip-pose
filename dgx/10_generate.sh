@@ -23,8 +23,8 @@ export KEEP_FLAT APPEARANCE APPEARANCE_PRESET OCCLUDE TOOL_PROB JAW_MIN_OPEN_TOO
 PER=$(( (N_TOTAL + SHARDS - 1) / SHARDS ))
 mkdir -p "$DATA_OUT"
 cd "$ROOT/GT_Generator"
-echo "generate | $N_TOTAL samples | $SHARDS shards x $PER | seeds $BASE_SEED.. | GPUs $NGPU | out $DATA_OUT"
-env | grep -E "^(KEEP_FLAT|APPEARANCE|OCCLUDE|TOOL_PROB|JAW_|CLIP_FRAC|BBOX_RATIO|AVOID_|BLADE_|USE_DINO|DINO_|FOCUS_MIN|MAX_PLACE)" | sort | tr '\n' ' '; echo
+echo "generate | $N_TOTAL samples | $SHARDS shards x $PER | seeds $BASE_SEED.. | GPUs $NGPU | mesh $(basename "$CLIP_MESH") | out $DATA_OUT"
+env | grep -E "^(CLIP_MESH|KEEP_FLAT|APPEARANCE|OCCLUDE|TOOL_PROB|JAW_|CLIP_FRAC|BBOX_RATIO|AVOID_|BLADE_|USE_DINO|DINO_|FOCUS_MIN|MAX_PLACE)" | sort | tr '\n' ' '; echo
 t0=$(date +%s)
 for k in $(seq 0 $((SHARDS - 1))); do
     start=$((k * PER)); n=$PER

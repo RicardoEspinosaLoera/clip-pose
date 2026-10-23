@@ -14,7 +14,12 @@ if [ -z "${PY:-}" ]; then                 # first interpreter that really has th
     fi
 fi
 export PY
-export DATA_OUT="${DATA_OUT:-$ROOT/GT_Generator/out_v3}"                     # the 5000-sample training set
+# Clip mesh used by generation, keypoints, validation, training and evaluation (all read CLIP_MESH).
+# clip_lazic_std.obj = Peter Lazic L-Aneurysm-Clip 45.750 (the MACS clip) with its .parts.json hinge; the
+# legacy Item.obj set (out_v3) was rendered WITHOUT this variable, so never mix meshes inside one DATA_OUT.
+export CLIP_MESH="${CLIP_MESH:-$ROOT/GT_Generator/clip_lazic_std.obj}"
+[ -f "$CLIP_MESH" ] || echo "[env] WARNING: CLIP_MESH not found: $CLIP_MESH (falls back to Item.obj inside the scripts)" >&2
+export DATA_OUT="${DATA_OUT:-$ROOT/GT_Generator/out_lclip}"                  # the training set (L-Clip mesh); out_v3 = old Item.obj set
 export RUNS="${RUNS:-$ROOT/pose_train/runs}"                                 # training outputs
 export LOGS="${LOGS:-$ROOT/logs}"
 export ANNOTATOR="${ANNOTATOR:-ricardo}"                                     # real_eval/annotations/<ANNOTATOR>/

@@ -8,7 +8,7 @@ Todo corre desde esta carpeta con rutas relativas. No hace falta pantalla: VTK d
 
 | Carpeta | Contenido | Tamaño |
 | --- | --- | --- |
-| `GT_Generator/` | generador, apariencia, validadores, `Item.obj`, `keypoints.json` | 5 MB |
+| `GT_Generator/` | generador, apariencia, validadores, mallas (`clip_lazic_std.obj` + `.parts.json` = L-Clip de MACS, `Item.obj` legado), `keypoints*.json` | 30 MB |
 | `GT_Generator/Data/noclips_bank/` | 600 fondos reales sin clip (MACS) | 252 MB |
 | `pose_train/` | dataset, modelos M1/M2, train, splits, eval sintética y real | < 1 MB |
 | `Inpaint_Realism/lora/clean_clips2(_masks)/` | recortes reales de clip para la métrica de brecha de dominio (KID) | 476 MB |

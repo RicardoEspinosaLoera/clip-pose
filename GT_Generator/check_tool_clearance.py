@@ -38,7 +38,7 @@ _g = {"cv2": cv2, "np": np, "AVOID_MARGIN_PX": 0}
 exec(_fn, _g)
 instrument_avoid_mask = _g["instrument_avoid_mask"]      # margin 0 here: we measure clearance ourselves
 
-MESH = pv.read(os.path.join(HERE, "Item.obj"))
+MESH = pv.read(os.environ.get("CLIP_MESH", os.path.join(HERE, "Item.obj")))   # must match the mesh the set was rendered with
 BLADE_DIR = pca_frame(np.asarray(MESH.points, np.float64))[1][:, 0]
 PROMPT = ("surgical forceps. bipolar forceps. surgical instrument. instrument shaft. clip applier. suction tube. "
           "suction cannula. cautery. cottonoid patty. gauze. surgical needle. scissors. retractor. metal instrument. metal rod.")

@@ -2,7 +2,8 @@
 make_bundle.py — pack everything the DGX needs into one tar (run on the Windows laptop).
 
 Contents (relative to the bundle root RealAC_Generator/):
-  GT_Generator/   scripts, Item.obj, keypoints.json, Data/noclips_bank (600 real backplates)
+  GT_Generator/   scripts, meshes (Item.obj legacy; clip_lazic_std.obj + .parts.json = MACS L-Clip), keypoints*.json,
+                  Data/noclips_bank (600 real backplates)
   pose_train/     training / evaluation code
   Inpaint_Realism/lora/clean_clips2 (+_masks)   real clip crops for the domain-gap metric
   real_eval/      selected real frames (+ annotations if present)

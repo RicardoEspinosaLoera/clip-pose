@@ -41,7 +41,7 @@ from articulate_clip import articulate, pca_frame
 from metrics import clip_shift_robust
 import restyle_appearance as ra
 
-MESH = pv.read(os.path.join(HERE, "Item.obj"))
+MESH = pv.read(os.environ.get("CLIP_MESH", os.path.join(HERE, "Item.obj")))   # must match the mesh the set was rendered with
 BLADE_DIR = pca_frame(np.asarray(MESH.points, np.float64))[1][:, 0]
 _ART = {}
 
