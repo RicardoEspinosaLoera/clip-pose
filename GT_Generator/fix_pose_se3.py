@@ -37,7 +37,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from articulate_clip import articulate
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-MESH_PATH = os.path.join(HERE, "Item.obj")
+MESH_PATH = os.environ.get("CLIP_MESH", os.path.join(HERE, "Item.obj"))   # must match the mesh the set was rendered with
 
 CONVENTIONS = {
     "camera_frame": "OpenCV: x right, y down, z forward (right-handed); "

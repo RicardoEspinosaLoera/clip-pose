@@ -55,7 +55,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from articulate_clip import articulate, pca_frame
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-MESH_PATH = os.path.join(HERE, "Item.obj")
+MESH_PATH = os.environ.get("CLIP_MESH", os.path.join(HERE, "Item.obj"))   # module-level clip frame (BLADE_DIR_MODEL) + standalone CLI
 REAL_CROPS = os.path.normpath(os.path.join(HERE, "..", "Inpaint_Realism", "lora", "clean_clips2"))
 REAL_MASKS = os.path.normpath(os.path.join(HERE, "..", "Inpaint_Realism", "lora", "clean_clips2_masks"))
 
