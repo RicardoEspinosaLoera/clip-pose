@@ -106,6 +106,7 @@ def main():
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--amodal", action="store_true", help="supervise keypoints hidden by the applier too")
     ap.add_argument("--image-suffix", default="", help='"_flat" trains on the flat renders (ablation A0)')
+    ap.add_argument("--aug", choices=["normal", "strong"], default="normal", help="strong = wide photometric + geometric jitter for real transfer")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
 
@@ -117,7 +118,7 @@ def main():
     train_stems = read_split(a.train_list or os.path.join(split_dir, "train.txt"))
     val_stems = read_split(os.path.join(split_dir, "val.txt"))
     cm = ClipModel()
-    ds_tr = ClipPoseDataset(a.data, train_stems, cm, crop=a.crop, heat=a.heat, train=True, image_suffix=a.image_suffix, amodal=a.amodal)
+    ds_tr = ClipPoseDataset(a.data, train_stems, cm, crop=a.crop, heat=a.heat, train=True, image_suffix=a.image_suffix, amodal=a.amodal, aug=a.aug)
     ds_va = ClipPoseDataset(a.data, val_stems, cm, crop=a.crop, heat=a.heat, train=False, image_suffix=a.image_suffix, amodal=a.amodal)
     dl_tr = DataLoader(ds_tr, batch_size=a.batch, shuffle=True, num_workers=a.workers, drop_last=True, pin_memory=True, persistent_workers=a.workers > 0)
     dl_va = DataLoader(ds_va, batch_size=a.batch, shuffle=False, num_workers=max(1, a.workers // 2))

@@ -89,7 +89,7 @@ def read_split(path):
 
 class ClipPoseDataset(Dataset):
     def __init__(self, data_dir, stems, clip_model, crop=512, heat=128, sigma=2.0, train=True,
-                 margin=1.5, jitter=0.10, scale_jitter=0.10, photometric=True, image_suffix="", amodal=False):
+                 margin=1.5, jitter=0.10, scale_jitter=0.10, photometric=True, image_suffix="", amodal=False, aug="normal"):
         self.d = data_dir
         self.amodal = amodal                             # True: supervise keypoints hidden by the applier too (exact GT)
         self.image_suffix = image_suffix                 # "_flat" = ablation A0 (flat render, no applier)
@@ -97,6 +97,9 @@ class ClipPoseDataset(Dataset):
         self.cm = clip_model
         self.crop, self.heat, self.sigma = crop, heat, sigma
         self.train, self.margin, self.jitter, self.scale_jitter = train, margin, jitter, scale_jitter
+        self.aug = aug                                   # "strong": wider photometric + geometric jitter (real-transfer)
+        if aug == "strong":
+            self.jitter, self.scale_jitter = max(jitter, 0.18), max(scale_jitter, 0.25)
         self.photometric = photometric and train
         self.K = len(clip_model.idx)
 
@@ -147,7 +150,7 @@ class ClipPoseDataset(Dataset):
         vis *= inside.astype(np.float32)
 
         if self.photometric:
-            crop = self._photometric(crop, rng)
+            crop = self._photometric(crop, rng, strong=(self.aug == "strong"))
 
         hm = np.zeros((self.K, self.heat, self.heat), np.float32)
         r = self.heat / self.crop
@@ -167,8 +170,33 @@ class ClipPoseDataset(Dataset):
                     stem=stem)
 
     @staticmethod
-    def _photometric(bgr, rng):
+    def _photometric(bgr, rng, strong=False):
         im = bgr.astype(np.float32)
+        if strong:
+            # real MACS clips: darker, more saturated blue, white-balance shifts, heavy defocus / motion blur,
+            # strong JPEG. Ranges deliberately wider than the synthetic appearance so the net cannot key on
+            # the exact render look (zero-shot on real was at chance with the normal augmentation).
+            im = im * rng.uniform(0.9, 1.1, size=(1, 1, 3))                          # per-channel gain (white balance)
+            im = im * rng.uniform(0.55, 1.45) + rng.uniform(-35, 35)                 # brightness / offset
+            m = im.mean()
+            im = (im - m) * rng.uniform(0.6, 1.5) + m                                # contrast
+            im = 255.0 * (np.clip(im, 0, 255) / 255.0) ** rng.uniform(0.6, 1.6)     # gamma
+            hsv = cv2.cvtColor(np.clip(im, 0, 255).astype(np.uint8), cv2.COLOR_BGR2HSV).astype(np.float32)
+            hsv[..., 0] = (hsv[..., 0] + rng.uniform(-10, 10)) % 180                 # hue shift
+            hsv[..., 1] = np.clip(hsv[..., 1] * rng.uniform(0.5, 1.7), 0, 255)       # saturation
+            im = cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2BGR).astype(np.float32)
+            if rng.random() < 0.7:
+                im = cv2.GaussianBlur(im, (0, 0), float(rng.uniform(0.5, 3.0)))
+            if rng.random() < 0.3:                                                   # motion blur
+                L = int(rng.integers(5, 15)); k = np.zeros((L, L), np.float32); k[L // 2, :] = 1.0 / L
+                M = cv2.getRotationMatrix2D((L / 2 - 0.5, L / 2 - 0.5), float(rng.uniform(0, 180)), 1.0)
+                im = cv2.filter2D(im, -1, cv2.warpAffine(k, M, (L, L)))
+            if rng.random() < 0.7:
+                ok, buf = cv2.imencode(".jpg", np.clip(im, 0, 255).astype(np.uint8), [cv2.IMWRITE_JPEG_QUALITY, int(rng.integers(25, 85))])
+                if ok:
+                    im = cv2.imdecode(buf, cv2.IMREAD_COLOR).astype(np.float32)
+            im = im + rng.normal(0, rng.uniform(0, 6), im.shape)
+            return np.clip(im, 0, 255).astype(np.uint8)
         im = im * rng.uniform(0.8, 1.2) + rng.uniform(-20, 20)                      # brightness / offset
         m = im.mean()
         im = (im - m) * rng.uniform(0.8, 1.2) + m                                   # contrast
