@@ -9,5 +9,8 @@ if [ ! -s mi_nombre.txt ]; then
 fi
 NAME=$(tr -d '[:space:]' < mi_nombre.txt)
 echo "Anotador: $NAME"
-"$PY" -c "import cv2, numpy" 2>/dev/null || "$PY" -m pip install --quiet --user opencv-python numpy
+if ! "$PY" -c "import cv2, numpy" 2>/dev/null; then
+    echo "Instalando OpenCV y NumPy (unos 40 MB, solo la primera vez; puede tardar unos minutos)..."
+    "$PY" -m pip install --user --disable-pip-version-check opencv-python numpy || { echo "No se pudo instalar OpenCV: revisa la conexion"; exit 1; }
+fi
 "$PY" pose_train/annotate_tool.py --annotator "$NAME"
