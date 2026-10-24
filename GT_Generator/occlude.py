@@ -45,7 +45,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 MESH_PATH = os.environ.get("CLIP_MESH", os.path.join(HERE, "Item.obj"))   # env-overridable (standalone runs only; the generator passes its own mesh)
 INSTRUMENT_DIR = os.path.join(HERE, "Data", "instruments")
 
-PROB = dict(tissue=0.25, applier=0.0, blood=0.35)       # 2-D applier OFF: restyle_appearance renders a 3-D one
+PROB = dict(tissue=0.50, applier=0.35, blood=0.25)      # applier = REAL cutout only (Data/instruments), never on tool_held samples
 MIN_VISIBLE = 0.35                                      # an occluder is dropped if less of the clip would remain
 JPEG_AFTER = (65, 90)
 
@@ -103,27 +103,92 @@ def clip_axis_px(meta, V, blade_dir):
 
 
 # ------------------------------------------------------------------ 1) clip under tissue (seamless reveal)
-def tissue_cover(img, bg, mask, rng, tries=12):
-    """Reveal the clip-free backplate over part of the clip (tissue / membrane / blood pool
-    in front of the clip). Returns (image, cover_mask, coverage) or None."""
+def _snap_to_edges(bg, blob, grid=14):
+    """Re-shape a soft occluder blob so that its boundary follows real edges of the backplate:
+    watershed over-segmentation of the backplate around the blob, keep the segments that lie
+    mostly inside the blob. The reveal then stops at tissue folds / vessel borders instead of
+    along a smooth ellipse (a smooth ellipse reads as a pasted sticker)."""
+    ys, xs = np.nonzero(blob > 0)
+    if len(xs) < 50:
+        return blob
+    H, W = blob.shape
+    pad = 24
+    x0, x1 = max(0, xs.min() - pad), min(W, xs.max() + pad + 1)
+    y0, y1 = max(0, ys.min() - pad), min(H, ys.max() + pad + 1)
+    roi = cv2.GaussianBlur(bg[y0:y1, x0:x1], (0, 0), 1.0)
+    grid = int(np.clip(0.22 * np.sqrt(len(xs)), 10, 26))     # segments scale with the occluder, not the image
+    markers = np.zeros(roi.shape[:2], np.int32)
+    k = 1
+    for gy in range(grid // 2, roi.shape[0], grid):
+        for gx in range(grid // 2, roi.shape[1], grid):
+            markers[gy, gx] = k
+            k += 1
+    if k < 4:
+        return blob
+    cv2.watershed(roi, markers)
+    lab = markers.copy()
+    lab[lab < 1] = 0
+    b = blob[y0:y1, x0:x1] > 0
+    region = np.zeros_like(b)
+    for l in np.unique(lab[lab > 0]):
+        seg = lab == l
+        if (seg & b).sum() >= 0.5 * seg.sum():
+            region |= seg
+    region = cv2.dilate(region.astype(np.uint8), np.ones((3, 3), np.uint8))               # fill the -1 ridges
+    # in smooth tissue the watershed cells are grid squares: round the outline (keep the big
+    # edge-following excursions, drop the stair steps) and keep one connected piece
+    ker = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9))
+    region = cv2.morphologyEx(cv2.morphologyEx(region, cv2.MORPH_CLOSE, ker), cv2.MORPH_OPEN, ker)
+    region = cv2.GaussianBlur(region.astype(np.float32), (0, 0), 2.0) > 0.5
+    region &= cv2.dilate((blob[y0:y1, x0:x1] > 0).astype(np.uint8), np.ones((15, 15), np.uint8)) > 0
+    n, lab2, st, _ = cv2.connectedComponentsWithStats(region.astype(np.uint8), 8)
+    if n > 2:
+        region = lab2 == (1 + int(np.argmax(st[1:, cv2.CC_STAT_AREA])))
+    out = np.zeros_like(blob)
+    out[y0:y1, x0:x1] = region.astype(np.uint8) * 255
+    return out if (out > 0).sum() > 0.4 * (blob > 0).sum() else blob
+
+
+def tissue_cover(img, bg, mask, rng, meta=None, V=None, blade_dir=None, tries=12):
+    """Reveal the clip-free backplate over part of the clip (tissue in front of the clip).
+    70 %: anchored at the JAWS (the clip disappears into the aneurysm / tissue it is placed on,
+    the common real case), else anywhere on the outline. The reveal boundary snaps to real
+    backplate edges (watershed). Returns (image, cover_mask, coverage) or None."""
     H, W = mask.shape
     m, xs, ys, clip_w, clip_l = _mask_geom(mask)
     area = float(m.sum())
     edge = m & ~(cv2.erode(m.astype(np.uint8), np.ones((3, 3), np.uint8)) > 0)
     ey, ex = np.nonzero(edge)
     cxm, cym = xs.mean(), ys.mean()
+    axis = None
+    if meta is not None and V is not None and blade_dir is not None and rng.random() < 0.7:
+        try:
+            spring, tip = clip_axis_px(meta, V, blade_dir)
+            axis = (np.asarray(spring, float), np.asarray(tip, float))
+        except Exception:
+            axis = None
     for _ in range(tries):
-        i = rng.integers(len(ex))
-        r = float(np.sqrt(area) * rng.uniform(0.5, 1.2))
-        ov = np.array([ex[i] - cxm, ey[i] - cym], float)
-        ov /= (np.linalg.norm(ov) + 1e-6)
-        push = r * rng.uniform(0.35, 0.8)
-        blob = _blob_mask(H, W, ex[i] + ov[0] * push, ey[i] + ov[1] * push, r,
-                          rng.uniform(0.6, 1.0), rng.uniform(0, np.pi), rng, wobble=0.3)
+        if axis is not None:
+            spring, tip = axis
+            d = tip - spring
+            d /= (np.linalg.norm(d) + 1e-6)
+            r = float(np.sqrt(area) * rng.uniform(0.6, 1.3))
+            centre = tip + d * r * rng.uniform(0.2, 0.7)              # tissue beyond / around the jaw tips
+            blob = _blob_mask(H, W, centre[0], centre[1], r, rng.uniform(0.7, 1.0),
+                              float(np.arctan2(d[1], d[0])) + rng.uniform(-0.4, 0.4), rng, wobble=0.35)
+        else:
+            i = rng.integers(len(ex))
+            r = float(np.sqrt(area) * rng.uniform(0.5, 1.2))
+            ov = np.array([ex[i] - cxm, ey[i] - cym], float)
+            ov /= (np.linalg.norm(ov) + 1e-6)
+            push = r * rng.uniform(0.35, 0.8)
+            blob = _blob_mask(H, W, ex[i] + ov[0] * push, ey[i] + ov[1] * push, r,
+                              rng.uniform(0.6, 1.0), rng.uniform(0, np.pi), rng, wobble=0.3)
+        blob = _snap_to_edges(bg, blob)
         cov = float(((blob > 0) & m).sum() / max(area, 1))
         if not (0.12 <= cov <= 0.55):
             continue
-        soft = rng.uniform(1.0, 2.5)                      # tissue edge softness (px)
+        soft = rng.uniform(0.7, 1.6)                      # tissue edge softness (px): real edges are fairly crisp
         a_max = 1.0 if rng.random() < 0.6 else rng.uniform(0.6, 0.9)   # 40%: translucent film
         a = _feather(blob, soft) * a_max
         # lip shadow: the overhanging tissue darkens the CLIP just inside its edge. Restricted
@@ -330,24 +395,17 @@ def process_sample(d, stem, V, blade_dir, rng, keep_clean=False):
         if r is not None:
             out, cov = r
             info["blood"] = round(cov, 3)
-    if rng.random() < PROB["applier"]:
-        items = _load_instruments()
-        r = None
-        if items and rng.random() < 0.7:
-            r = applier_cutout(out, mask, meta, V, blade_dir, rng, items)
-            if r is not None:
-                out2, occ, cov, src = r
-                info["applier_src"] = src
-        if r is None:
-            out2, occ, cov = applier_procedural(out, mask, meta, V, blade_dir, rng)
-        vis2 = visible.copy()
-        vis2[occ > 127] = 0
-        if vis_frac(vis2) >= MIN_VISIBLE:
-            out, visible, info["applier"] = out2, vis2, round(cov, 3)
-        else:
-            info.pop("applier_src", None)
+    items = _load_instruments()
+    if items and not meta["clip"].get("tool_held") and rng.random() < PROB["applier"]:
+        r = applier_cutout(out, mask, meta, V, blade_dir, rng, items)
+        if r is not None:
+            out2, occ, cov, src = r
+            vis2 = visible.copy()
+            vis2[occ > 127] = 0
+            if vis_frac(vis2) >= MIN_VISIBLE:
+                out, visible, info["applier"], info["applier_src"] = out2, vis2, round(cov, 3), src
     if rng.random() < PROB["tissue"]:
-        r = tissue_cover(out, bg, mask, rng)
+        r = tissue_cover(out, bg, mask, rng, meta, V, blade_dir)
         if r is not None:
             out2, cover, cov = r
             vis2 = visible.copy()
