@@ -383,6 +383,7 @@ def main():
     ap.add_argument("--keep-clean", action="store_true")
     ap.add_argument("--montage", default=None)
     ap.add_argument("--n-montage", type=int, default=24)
+    ap.add_argument("--shard", default=None, help="K/N: process every N-th stem starting at K (run N processes in parallel, e.g. in-place on a copy)")
     ap.add_argument("--stem-seed", action="store_true",
                     help="seed per sample as seed*100003 + int(stem): reproduces the generator's in-line occlusion draws")
     a = ap.parse_args()
@@ -403,6 +404,12 @@ def main():
     stems = sorted(os.path.splitext(os.path.basename(p))[0] for p in glob.glob(os.path.join(d, "[0-9]*.json")))
     if a.limit:
         stems = stems[:a.limit]
+    if a.shard:
+        k, n = (int(v) for v in a.shard.split("/"))
+        stems = stems[k::n]
+        if not a.stem_seed:
+            print("[shard] forcing --stem-seed so every process draws a different, reproducible occlusion per stem")
+            a.stem_seed = True
     cells, counts, vis = [], {"tissue": 0, "applier": 0, "blood": 0, "clean": 0, "cutout": 0}, []
     print(f"instrument cutouts available: {len(_load_instruments())}")
     for i, stem in enumerate(stems):
