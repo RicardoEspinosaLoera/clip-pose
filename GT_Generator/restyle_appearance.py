@@ -75,6 +75,17 @@ PRESETS = {
     "anodized3": dict(base=(0.18, 0.42, 0.82), rough=(0.20, 0.40), coat=0.0,
                       P=dict(tissue_gain=(0.5, 0.8), light_gain=(3.5, 7.0), halo_gain=(0.35, 0.60),
                              shadow_strength=0.40, shadow_blur_frac=0.16, shadow_shift_frac=(0.04, 0.08))),
+    # high contrast (23 Oct 2026): measured on 512-px clip boxes, real MACS clips have ~19 % near-black
+    # pixels (shadows, applier head), ~6 % saturated highlights, value std 55 and 2x the edge strength
+    # of anodized2 renders (0 % dark, 1.6 % bright, std 41). So: deeper blacks (black_lift), a stronger
+    # and tighter key light (brighter speculars), less tissue bounce and fill (shadowed facets stay
+    # dark), smoother metal (sharper highlights), less softening (defocus/bloom/chroma), darker contact shadow.
+    "anodized_hc": dict(base=(0.16, 0.40, 0.82), rough=(0.08, 0.20), coat=0.0,
+                        P=dict(tissue_gain=(0.18, 0.38), light_gain=(8.0, 14.0), light_radius_deg=(12.0, 22.0),
+                               halo_gain=(0.12, 0.28), headlight=(0.80, 1.60), fill=(0.02, 0.08),
+                               black_lift=0.10, defocus_base=(0.15, 0.40), defocus_dof_gain=1.5, bloom_gain=0.20, bloom_thresh=0.80,
+                               chroma_sigma=0.7, unsharp_amount=(0.5, 1.1), jpeg_quality=(60, 90), motion_blur_prob=0.25,
+                               shadow_strength=0.60, shadow_blur_frac=0.12, shadow_shift_frac=(0.04, 0.09))),
     # ablation ladder of the protocol (section 7, E2), all with --no-applier and --reuse-seed:
     #   A0 flat (generator's NNNNN_flat.png) -> A1 anodized + IBL -> A2 + optics (DoF, CA, black level)
     #   -> A3 + video footprint (bloom, chroma, noise, JPEG, motion blur) = anodized2 without applier
@@ -122,6 +133,8 @@ P = dict(
     black_lift=1.0,                  # 1 = lift the clip's blacks fully to the frame's black level
     bloom_thresh=0.80, bloom_sigma=3.0, bloom_gain=0.35,   # threshold in display units
     chroma_sigma=1.6,
+    unsharp_amount=(0.0, 0.0),       # camera-style edge enhancement inside the clip/applier region (0 = off)
+    unsharp_radius=1.2,
     noise_gain=1.0,
     shadow_strength=0.25, shadow_shift_frac=(0.03, 0.06), shadow_blur_frac=0.10,
     jpeg_prob=1.0, jpeg_quality=(50, 85),
@@ -516,6 +529,10 @@ def composite(bg_bgr, rgba_clip, mask, rng, rgba_app=None, app_anchor=None):
     reg = cv2.GaussianBlur(cv2.dilate(m8 * 255, np.ones((9, 9), np.uint8)).astype(np.float32) / 255.0, (0, 0), 2.0)
     if rgba_app is not None:
         reg = np.maximum(reg, cv2.GaussianBlur(cv2.dilate(occ8, np.ones((9, 9), np.uint8)).astype(np.float32) / 255.0, (0, 0), 2.0))
+    us_amt = U(rng, P["unsharp_amount"])
+    if us_amt > 0:                                   # video processors sharpen: crisp metal edges, ringing halos
+        blur_us = cv2.GaussianBlur(out, (0, 0), P["unsharp_radius"])
+        out = np.clip(out + us_amt * (out - blur_us) * reg[..., None], 0.0, 1.0).astype(np.float32)
     ycc = cv2.cvtColor(np.ascontiguousarray(out), cv2.COLOR_BGR2YCrCb)
     cb = cv2.GaussianBlur(ycc[..., 1:], (0, 0), P["chroma_sigma"])
     ycc[..., 1:] = cb * reg[..., None] + ycc[..., 1:] * (1.0 - reg[..., None])
