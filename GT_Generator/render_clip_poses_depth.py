@@ -605,9 +605,24 @@ DINO_MAX_AREA    = float(os.environ.get("DINO_MAX_AREA", 0.35))  # drop over-inc
 _GDINO = {"model": None}
 
 
+def _import_transformers_dino():
+    """`from transformers import AutoProcessor, AutoModelForZeroShotObjectDetection`, tolerating a broken
+    torchvision (on the laptop a Windows Application Control policy blocks torchvision/_C.pyd, WinError 4551):
+    transformers only uses torchvision for optional fast image paths, so declare it absent and retry."""
+    try:
+        from transformers import AutoProcessor, AutoModelForZeroShotObjectDetection
+    except Exception:
+        import transformers.utils as tu
+        import transformers.utils.import_utils as iu
+        iu.is_torchvision_available = lambda: False
+        tu.is_torchvision_available = lambda: False
+        from transformers import AutoProcessor, AutoModelForZeroShotObjectDetection
+    return AutoProcessor, AutoModelForZeroShotObjectDetection
+
+
 def _load_gdino():
     import torch
-    from transformers import AutoProcessor, AutoModelForZeroShotObjectDetection
+    AutoProcessor, AutoModelForZeroShotObjectDetection = _import_transformers_dino()
     if _GDINO["model"] is None:
         dev = "cuda" if torch.cuda.is_available() else "cpu"
         _GDINO["processor"] = AutoProcessor.from_pretrained(DINO_MODEL)

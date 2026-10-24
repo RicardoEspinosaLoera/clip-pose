@@ -43,7 +43,7 @@ from articulate_clip import pca_frame
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 MESH_PATH = os.environ.get("CLIP_MESH", os.path.join(HERE, "Item.obj"))   # env-overridable (standalone runs only; the generator passes its own mesh)
-INSTRUMENT_DIR = os.path.join(HERE, "Data", "instruments")
+INSTRUMENT_DIR = os.environ.get("INSTRUMENT_DIR", os.path.join(HERE, "Data", "instruments"))   # real cutouts (build_instrument_library.py)
 
 PROB = dict(tissue=0.50, applier=0.35, blood=0.25)      # applier = REAL cutout only (Data/instruments), never on tool_held samples
 MIN_VISIBLE = 0.35                                      # an occluder is dropped if less of the clip would remain
@@ -280,61 +280,77 @@ def applier_procedural(img, mask, meta, V, blade_dir, rng):
     return np.clip(out, 0, 255).astype(np.uint8), (a[..., 0] > 0.5).astype(np.uint8) * 255, cov
 
 
-def applier_cutout(img, mask, meta, V, blade_dir, rng, items):
-    """Paste a REAL instrument cutout (BGRA) so that its inner end sits on the clip's spring
-    and its body runs out of the frame. Returns None when no cutout fits."""
+def applier_cutout(img, mask, meta, V, blade_dir, rng, items, tries=10):
+    """Paste a REAL instrument cutout (BGRA) as the applier: its inner end bites over the clip
+    HEAD (spring / coil, 15-50 % of the clip covered, like the real frames where the applier head
+    hides the back of the clip), its body runs along the clip axis (+-35 deg) and is scaled so
+    that it always leaves the frame (held from outside), strongly defocused (it is closer to the
+    camera). Returns (image, occluder_mask, coverage, cutout_file) or None."""
     H, W = mask.shape
     m, xs, ys, clip_w, clip_l = _mask_geom(mask)
     spring, tip = clip_axis_px(meta, V, blade_dir)
-    rec = items[int(rng.integers(len(items)))]
-    cut = cv2.imread(os.path.join(INSTRUMENT_DIR, rec["file"]), cv2.IMREAD_UNCHANGED)
-    if cut is None or cut.shape[2] != 4:
-        return None
-    # scale: cutout frames are 1920 px wide; our frames are 800. Keep the real relative scale
-    # with jitter, then rotate so the cutout's border side points away from the clip.
-    s = (W / float(rec["frame"][0])) * rng.uniform(0.8, 1.4)
-    cut = cv2.resize(cut, None, fx=s, fy=s, interpolation=cv2.INTER_AREA)
-    ch, cw = cut.shape[:2]
-    a = cut[..., 3].astype(np.float32) / 255.0
-    ys_c, xs_c = np.nonzero(a > 0.5)
-    if len(xs_c) < 50:
-        return None
-    # inner end = the cutout point farthest from its border side(s); outer direction = toward them
-    side = rec["sides"][0]
-    if side == "L":
-        inner = np.array([xs_c.max(), ys_c[np.argmax(xs_c)]], float); outward = np.array([-1.0, 0.0])
-    elif side == "R":
-        inner = np.array([xs_c.min(), ys_c[np.argmin(xs_c)]], float); outward = np.array([1.0, 0.0])
-    elif side == "T":
-        inner = np.array([xs_c[np.argmax(ys_c)], ys_c.max()], float); outward = np.array([0.0, -1.0])
-    else:
-        inner = np.array([xs_c[np.argmin(ys_c)], ys_c.min()], float); outward = np.array([0.0, 1.0])
-    d = spring - tip
-    d /= (np.linalg.norm(d) + 1e-6)
-    ang = np.deg2rad(rng.uniform(-35, 35))
-    ca, sa = np.cos(ang), np.sin(ang)
-    d = np.array([ca * d[0] - sa * d[1], sa * d[0] + ca * d[1]])      # desired outward direction
-    rot = np.degrees(np.arctan2(d[1], d[0]) - np.arctan2(outward[1], outward[0]))
-    M = cv2.getRotationMatrix2D((float(inner[0]), float(inner[1])), -rot, 1.0)
-    # place the inner end slightly before the spring (jaws over the spring)
-    target = spring - d * clip_w * 0.6
-    M[:, 2] += target - inner
-    warped = cv2.warpAffine(cut, M, (W, H), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=(0, 0, 0, 0))
-    occ_a = warped[..., 3].astype(np.float32) / 255.0
-    if occ_a.max() < 0.5:
-        return None
-    occ = (occ_a > 0.5).astype(np.uint8) * 255
-    # must still reach a frame border (it is held from outside)
-    oy, ox = np.nonzero(occ)
-    if not (ox.min() < 3 or oy.min() < 3 or ox.max() > W - 4 or oy.max() > H - 4):
-        return None
-    cov = float(((occ > 127) & m).sum() / max(m.sum(), 1))
-    blur = rng.uniform(1.0, 3.5)
-    body = cv2.GaussianBlur(warped[..., :3].astype(np.float32), (0, 0), blur)
-    a = cv2.GaussianBlur(occ_a, (0, 0), blur)[..., None]
-    out = img.astype(np.float32) * _shadow_band(occ, 6, 0.25)[..., None]
-    out = a * body + (1 - a) * out
-    return np.clip(out, 0, 255).astype(np.uint8), occ, cov, rec["file"]
+    for _ in range(tries):
+        rec = items[int(rng.integers(len(items)))]
+        cut = cv2.imread(os.path.join(INSTRUMENT_DIR, rec["file"]), cv2.IMREAD_UNCHANGED)
+        if cut is None or cut.shape[2] != 4:
+            continue
+        a0 = cut[..., 3].astype(np.float32) / 255.0
+        ys_c, xs_c = np.nonzero(a0 > 0.5)
+        if len(xs_c) < 50:
+            continue
+        side = rec["sides"][0]
+        if side == "L":
+            inner = np.array([xs_c.max(), ys_c[np.argmax(xs_c)]], float); outward = np.array([-1.0, 0.0])
+        elif side == "R":
+            inner = np.array([xs_c.min(), ys_c[np.argmin(xs_c)]], float); outward = np.array([1.0, 0.0])
+        elif side == "T":
+            inner = np.array([xs_c[np.argmax(ys_c)], ys_c.max()], float); outward = np.array([0.0, -1.0])
+        else:
+            inner = np.array([xs_c[np.argmin(ys_c)], ys_c.min()], float); outward = np.array([0.0, 1.0])
+        # desired outward direction in OUR image: away from the jaws, +-35 deg
+        d = spring - tip
+        d /= (np.linalg.norm(d) + 1e-6)
+        ang = np.deg2rad(rng.uniform(-35, 35))
+        ca, sa = np.cos(ang), np.sin(ang)
+        d = np.array([ca * d[0] - sa * d[1], sa * d[0] + ca * d[1]])
+        # bite: the inner end sits over the head (between coil and hinge), not behind it
+        target = spring - d * clip_w * rng.uniform(0.2, 1.0)
+        # scale so that the cutout reaches the frame border along d (with margin); keep the real
+        # 1920->800 relation as the lower bound so instruments never look miniature
+        proj = (np.c_[xs_c, ys_c] - inner) @ outward
+        L_cut = float(proj.max() - proj.min()) + 1.0
+        dists = []
+        for comp, lim in ((d[0], W), (d[1], H)):
+            if comp > 1e-6:
+                dists.append((lim - 1 - (target[0] if lim == W else target[1])) / comp)
+            elif comp < -1e-6:
+                dists.append(-(target[0] if lim == W else target[1]) / comp)
+        dist = min(dists) if dists else max(W, H)
+        s_min = W / float(rec["frame"][0]) * 0.8
+        s = float(np.clip(1.2 * dist / L_cut, s_min, 3.0)) * rng.uniform(1.0, 1.25)
+        cutr = cv2.resize(cut, None, fx=s, fy=s, interpolation=cv2.INTER_AREA if s < 1 else cv2.INTER_LINEAR)
+        inner_s = inner * s
+        rot = np.degrees(np.arctan2(d[1], d[0]) - np.arctan2(outward[1], outward[0]))
+        M = cv2.getRotationMatrix2D((float(inner_s[0]), float(inner_s[1])), -rot, 1.0)
+        M[:, 2] += target - inner_s
+        warped = cv2.warpAffine(cutr, M, (W, H), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=(0, 0, 0, 0))
+        occ_a = warped[..., 3].astype(np.float32) / 255.0
+        if occ_a.max() < 0.5:
+            continue
+        occ = (occ_a > 0.5).astype(np.uint8) * 255
+        cov = float(((occ > 127) & m).sum() / max(m.sum(), 1))
+        if not (0.08 <= cov <= 0.60):
+            continue
+        oy, ox = np.nonzero(occ)
+        if not (ox.min() < 3 or oy.min() < 3 or ox.max() > W - 4 or oy.max() > H - 4):
+            continue                                              # must still be held from outside the frame
+        blur = rng.uniform(1.5, 4.5)                              # closer to the camera than the clip: defocused
+        body = cv2.GaussianBlur(warped[..., :3].astype(np.float32), (0, 0), blur)
+        a = cv2.GaussianBlur(occ_a, (0, 0), blur)[..., None]
+        out = img.astype(np.float32) * _shadow_band(occ, 8, 0.30)[..., None]
+        out = a * body + (1 - a) * out
+        return np.clip(out, 0, 255).astype(np.uint8), occ, cov, rec["file"]
+    return None
 
 
 # ------------------------------------------------------------------ 3) blood film
