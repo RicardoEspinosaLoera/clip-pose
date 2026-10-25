@@ -2,8 +2,14 @@
 measure_appearance_stats.py — are the synthetic clips as sharp, contrasty, shiny and shadowed as the real ones?
 
 Compares, on the training crop (clip box x1.5 -> 512 px, statistics inside the clip box), real MACS clip
-boxes (Inpaint_Realism/lora/clean_clips2/crops.jsonl, detector score >= 0.45, frames read from MACS_ROOT)
-with one or more synthetic sets (NNNNN.png + NNNNN_mask.png):
+boxes with one or more synthetic sets (NNNNN.png + NNNNN_mask.png). Two real sources (--real):
+  crops  Inpaint_Realism/lora/clean_clips2/crops.jsonl, detector score >= 0.45, frames read from MACS_ROOT
+         (laptop only: the DGX has no MACS frames)
+  v2     real_eval_v2/frames + annotations/<annotator> (versioned, works on the DGX): box built from the
+         annotated tip/back points (clip length L: +6 % along the axis, half-width 0.22 L across)
+  auto   (default) crops when MACS_ROOT exists, else v2
+Both keep boxes with max side <= --max-box (400 px, as in the 23 Oct tuning) so up/down-scaling to 512 is
+comparable; a 600-px clip downscaled would look sharper than an 80-px one upscaled.
   lap      variance of the Laplacian after a 1-px denoise  (edge sharpness)
   grad90   90th percentile of the gradient magnitude        (edge strength)
   v_std    std of HSV value                                 (contrast)
@@ -25,6 +31,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.normpath(os.path.join(HERE, ".."))
 MACS = os.environ.get("MACS_ROOT", r"C:\Users\ricar\OneDrive\Documentos\MAC_dataset\23533731")
 CROPS = os.path.join(REPO, "Inpaint_Realism", "lora", "clean_clips2", "crops.jsonl")
+V2 = os.path.join(REPO, "real_eval_v2")
 
 
 def crop512(img, x, y, w, h, margin=1.5):
@@ -49,10 +56,11 @@ def stats(c, s, w, h):
                 bright=float((V > 225).mean() * 100), dark=float((V < 60).mean() * 100), sat_med=float(np.median(S)))
 
 
-def real_stats(n, seed=0):
+def real_stats(n, seed=0, max_box=400):
+    """MACS detector boxes (crops.jsonl) read from the MACS root -- laptop only."""
     rng = np.random.default_rng(seed)
     rows = [json.loads(l) for l in open(CROPS)]
-    rows = [r for r in rows if r["score"] >= 0.45 and r["box"][2] * r["box"][3] < 400 * 400]
+    rows = [r for r in rows if r["score"] >= 0.45 and max(r["box"][2], r["box"][3]) <= max_box]
     rng.shuffle(rows)
     out = []
     for r in rows[:n]:
@@ -60,6 +68,45 @@ def real_stats(n, seed=0):
         if im is None:
             continue
         x, y, w, h = r["box"]
+        c, s = crop512(im, x, y, w, h)
+        out.append(stats(c, s, w, h))
+    return out
+
+
+def box_from_points(pts, along=0.06, half_width=0.22):
+    """Tight clip box from the annotated tip and back end: the clip axis plus a margin across it."""
+    tip, back = np.array(pts["tip"], float), np.array(pts["back"], float)
+    L = np.linalg.norm(back - tip)
+    u = (back - tip) / max(L, 1e-6)
+    v = np.array([-u[1], u[0]])
+    corners = [tip - along * L * u + sgn * half_width * L * v for sgn in (-1, 1)] +               [back + along * L * u + sgn * half_width * L * v for sgn in (-1, 1)]
+    corners = np.array(corners)
+    x0, y0 = corners.min(0)
+    x1, y1 = corners.max(0)
+    return float(x0), float(y0), float(x1 - x0), float(y1 - y0)
+
+
+def real_stats_v2(n, seed=0, max_box=400, annotator="ricardo"):
+    """real_eval_v2 frames with the annotated clip axis (versioned with the repo -> runs on the DGX too)."""
+    ann_dir = os.path.join(V2, "annotations", annotator)
+    rows = []
+    for f in sorted(os.listdir(ann_dir)):
+        if not f.endswith(".json"):
+            continue
+        a = json.load(open(os.path.join(ann_dir, f)))
+        pts = a.get("points") or {}
+        if "tip" not in pts or "back" not in pts:
+            continue
+        x, y, w, h = box_from_points(pts)
+        if max(w, h) <= max_box:
+            rows.append((a["file"], (x, y, w, h)))
+    rng = np.random.default_rng(seed)
+    rng.shuffle(rows)
+    out = []
+    for fname, (x, y, w, h) in rows[:n]:
+        im = cv2.imread(os.path.join(V2, "frames", fname))
+        if im is None:
+            continue
         c, s = crop512(im, x, y, w, h)
         out.append(stats(c, s, w, h))
     return out
@@ -87,8 +134,20 @@ def main():
     ap.add_argument("--dirs", nargs="+", required=True, help="synthetic sets to compare with the real clip boxes")
     ap.add_argument("--n-real", type=int, default=250)
     ap.add_argument("--max-synth", type=int, default=400, help="subsample large sets (first N stems)")
+    ap.add_argument("--real", choices=("auto", "crops", "v2"), default="auto", help="real source (see module doc)")
+    ap.add_argument("--max-box", type=int, default=400, help="keep real boxes with max side <= this (px)")
+    ap.add_argument("--annotator", default="ricardo", help="--real v2: real_eval_v2/annotations/<annotator>")
     a = ap.parse_args()
-    real = real_stats(a.n_real)
+    src = a.real
+    if src == "auto":
+        src = "crops" if os.path.isdir(MACS) else "v2"
+    if src == "crops":
+        real = real_stats(a.n_real, max_box=a.max_box)
+    else:
+        real = real_stats_v2(a.n_real, max_box=a.max_box, annotator=a.annotator)
+    if not real:
+        raise SystemExit(f"no real boxes from source '{src}' (MACS_ROOT={MACS}, max_box={a.max_box})")
+    print(f"real source: {src} (max box side {a.max_box} px)")
     syn = {}
     for d in a.dirs:
         syn[d] = synth_stats(d)[:a.max_synth]
