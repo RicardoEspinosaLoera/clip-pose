@@ -26,6 +26,10 @@ import argparse
 import cv2
 import numpy as np
 import pyvista as pv
+try:                                   # laptop: Windows App Control blocks vtkInteractionWidgets.pyd (see pv_compat.py)
+    import pv_compat; pv_compat.install()
+except Exception:
+    pass
 from scipy.spatial.transform import Rotation as scipyR
 
 HERE = os.path.dirname(os.path.abspath(__file__))

@@ -21,6 +21,10 @@ import json
 import numpy as np
 import pyvista as pv
 
+try:                                   # laptop: Windows App Control blocks vtkInteractionWidgets.pyd (see pv_compat.py)
+    import pv_compat; pv_compat.install()
+except Exception:
+    pass
 MESH_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Item.obj")
 
 

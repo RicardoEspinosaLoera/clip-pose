@@ -40,6 +40,10 @@ from typing import Optional
 import cv2
 import numpy as np
 import pyvista as pv
+try:                                   # laptop: Windows App Control blocks vtkInteractionWidgets.pyd (see pv_compat.py)
+    import pv_compat; pv_compat.install()
+except Exception:
+    pass
 from PIL import Image
 from scipy.spatial.transform import Rotation as scipyR
 
@@ -145,6 +149,16 @@ DEPTH_VIZ_FAR  = float(os.environ.get("DEPTH_VIZ_FAR", 175.0))
 # gives a clear downward jaw tilt while keeping orientation variety.
 BLADE_AWAY     = int(os.environ.get("BLADE_AWAY", 1))
 BLADE_AWAY_MIN = float(os.environ.get("BLADE_AWAY_MIN", 0.35))
+# View angle of the clip axis (25 Oct 2026): the reference SAMPLES box + BLADE_AWAY put the clip's long axis
+# close to the view axis (out_lclip_tune: median 35 deg from the view axis, 11 % above 60 deg), i.e. the
+# head faces the camera and the blades go into the scene. In the real_eval_v2 frames the clip is seen
+# side-on (the axis close to the image plane). AXIS_VIEW_MIN/MAX_DEG keep only poses whose jaw axis makes
+# an angle in [min, max] with the view axis (90 = in the image plane). To reach in-plane views the rotvec
+# box must also be opened (POSE_PERTURB_MAX_DEG=90) and BLADE_AWAY_MIN lowered (0 = jaws not toward the
+# camera, -0.2 = slightly toward allowed), e.g. AXIS_VIEW_MIN_DEG=55 POSE_PERTURB_MAX_DEG=90 BLADE_AWAY_MIN=-0.2.
+# Default off (no change to earlier sets). Measure a set with view_angle_stats.py.
+AXIS_VIEW_MIN_DEG = float(os.environ.get("AXIS_VIEW_MIN_DEG", 0.0))
+AXIS_VIEW_MAX_DEG = float(os.environ.get("AXIS_VIEW_MAX_DEG", 90.0))
 # MACS-like clip appearance (restyle_appearance.py) applied in-line after each save: blue
 # anodized PBR + per-sample HDR environment + defocus/bloom/chroma matching. Same geometry
 # and camera, so the GT written just before is untouched. APPEARANCE=0 keeps the flat look;
@@ -431,6 +445,11 @@ def sample_visible_pose_guaranteed(cam, fx, fy, cx, cy,
             R = scipyR.from_rotvec(ang * axis).as_matrix() @ R
 
         n_world = _norm(R @ MODEL_UP)
+        if AXIS_VIEW_MIN_DEG > 0.0 or AXIS_VIEW_MAX_DEG < 90.0:
+            c_ax = abs(float(np.dot(_norm(R @ BLADE_DIR_MODEL), forward_world)))
+            ang_ax = float(np.degrees(np.arccos(min(1.0, c_ax))))
+            if not (AXIS_VIEW_MIN_DEG <= ang_ax <= AXIS_VIEW_MAX_DEG):
+                continue
         if BLADE_AWAY:
             # simulate placement: blades must point away from the camera (into tissue)
             blade_w = _norm(R @ BLADE_DIR_MODEL)

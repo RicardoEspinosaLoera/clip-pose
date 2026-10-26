@@ -112,18 +112,35 @@ def real_stats_v2(n, seed=0, max_box=400, annotator="ricardo"):
     return out
 
 
-def synth_stats(d):
+def axis_box_from_mask(m):
+    """Same construction as box_from_points, with the mask's principal axis as the clip axis (tip/back =
+    the extreme mask pixels along it), so synthetic and v2 boxes hold the same amount of background."""
+    ys, xs = np.nonzero(m)
+    pts = np.stack([xs, ys], 1).astype(np.float64)
+    c = pts.mean(0)
+    u = np.linalg.svd(pts - c, full_matrices=False)[2][0]
+    t = (pts - c) @ u
+    a, b = c + u * t.min(), c + u * t.max()
+    return box_from_points(dict(tip=a.tolist(), back=b.tolist()))
+
+
+def synth_stats(d, box="mask", suffix=""):
+    """box='mask': tight bbox of the mask (pairs with the detector boxes of --real crops);
+    box='axis': axis box from the mask (pairs with --real v2). suffix: e.g. '_flat' for the flat renders."""
     dd = d if os.path.isabs(d) else os.path.join(HERE, d)
     out = []
     for f in sorted(os.listdir(dd)):
         if f.endswith(".json") and f[0].isdigit():
             st = f[:-5]
-            img = cv2.imread(os.path.join(dd, st + ".png"))
+            img = cv2.imread(os.path.join(dd, st + suffix + ".png"))
             m = cv2.imread(os.path.join(dd, st + "_mask.png"), 0)
             if img is None or m is None or not (m > 127).any():
                 continue
-            ys, xs = np.nonzero(m > 127)
-            x, y, w, h = xs.min(), ys.min(), np.ptp(xs) + 1, np.ptp(ys) + 1
+            if box == "axis":
+                x, y, w, h = axis_box_from_mask(m > 127)
+            else:
+                ys, xs = np.nonzero(m > 127)
+                x, y, w, h = xs.min(), ys.min(), np.ptp(xs) + 1, np.ptp(ys) + 1
             c, s = crop512(img, x, y, w, h)
             out.append(stats(c, s, w, h))
     return out
@@ -137,6 +154,7 @@ def main():
     ap.add_argument("--real", choices=("auto", "crops", "v2"), default="auto", help="real source (see module doc)")
     ap.add_argument("--max-box", type=int, default=400, help="keep real boxes with max side <= this (px)")
     ap.add_argument("--annotator", default="ricardo", help="--real v2: real_eval_v2/annotations/<annotator>")
+    ap.add_argument("--suffix", default="", help="image suffix of the synthetic sets, e.g. _flat")
     a = ap.parse_args()
     src = a.real
     if src == "auto":
@@ -147,10 +165,11 @@ def main():
         real = real_stats_v2(a.n_real, max_box=a.max_box, annotator=a.annotator)
     if not real:
         raise SystemExit(f"no real boxes from source '{src}' (MACS_ROOT={MACS}, max_box={a.max_box})")
-    print(f"real source: {src} (max box side {a.max_box} px)")
+    box = "axis" if src == "v2" else "mask"
+    print(f"real source: {src} (max box side {a.max_box} px); synthetic box: {box}")
     syn = {}
     for d in a.dirs:
-        syn[d] = synth_stats(d)[:a.max_synth]
+        syn[d] = synth_stats(d, box=box, suffix=a.suffix)[:a.max_synth]
 
     def summ(rows, k):
         v = np.array([r[k] for r in rows])

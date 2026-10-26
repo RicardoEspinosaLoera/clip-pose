@@ -49,6 +49,10 @@ import argparse
 import cv2
 import numpy as np
 import pyvista as pv
+try:                                   # laptop: Windows App Control blocks vtkInteractionWidgets.pyd (see pv_compat.py)
+    import pv_compat; pv_compat.install()
+except Exception:
+    pass
 from scipy.spatial.transform import Rotation as scipyR
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -86,6 +90,29 @@ PRESETS = {
                                black_lift=0.10, defocus_base=(0.15, 0.40), defocus_dof_gain=1.5, bloom_gain=0.20, bloom_thresh=0.80,
                                chroma_sigma=0.7, unsharp_amount=(0.5, 1.1), jpeg_quality=(60, 90), motion_blur_prob=0.25,
                                shadow_strength=0.60, shadow_blur_frac=0.12, shadow_shift_frac=(0.04, 0.09))),
+    # v2 target (25 Oct 2026): tuned against the frames we actually evaluate (real_eval_v2, axis box from the
+    # annotated tip/back, measure_appearance_stats.py --real v2) instead of the detector-filtered crops: those
+    # frames are BLURRIER than the crops (lap 1.4 vs 3.6) but darker and contrastier (dark 28 %, bright 8.6 %,
+    # value std 61); anodized_hc gave lap 3.3 / dark 12 % / bright 1.7 % / std 48 on the DGX set.
+    # Sweep on 18 local L-Clip samples (_tune_sweep.py): a wide light (sigma 18-32 deg) lights the whole
+    # hemisphere (dark 0.5 %); rough metal (0.3-0.6) reflects the red tissue dome broadly (orange body, dark
+    # 0-1 %); a narrow light (4-9 deg) kills the highlights (bright 0.1 %). Best balance = smooth metal, a
+    # nearly black surround (tissue 0.04-0.12, halo 0.03-0.08, room 0.003, fill <= 0.03, no black lift), a
+    # medium coaxial light (10-18 deg, gain 12-24) with the two-exposure HDR merge (hdr_k 8) so blown
+    # highlights survive the defocus, no video sharpening, more defocus / motion blur, a darker contact shadow:
+    # lap 1.3 / grad 34 / dark 9 % / bright 1.4 % / sat 137 (real 1.4 / 37 / 28 % / 8.6 % / 120). The rest of
+    # the dark/bright gap is geometry, not shading: real clips are seen side-on with their flat faces toward
+    # the camera (see AXIS_VIEW_MIN_DEG in render_clip_poses_depth.py and view_angle_stats.py).
+    "anodized_v2": dict(base=(0.20, 0.42, 0.80), rough=(0.10, 0.25), coat=0.0,
+                        P=dict(tissue_gain=(0.04, 0.12), room_rgb=(0.003, 0.002, 0.002),
+                               light_gain=(12.0, 24.0), light_radius_deg=(10.0, 18.0),
+                               halo_gain=(0.03, 0.08), headlight=(0.8, 1.6), fill=(0.0, 0.03),
+                               black_lift=0.0, hdr_k=8.0,
+                               defocus_base=(0.35, 0.90), defocus_dof_gain=2.5,
+                               bloom_gain=0.20, bloom_thresh=0.80, chroma_sigma=1.2,
+                               unsharp_amount=(0.0, 0.35), jpeg_quality=(45, 85),
+                               motion_blur_prob=0.35, motion_blur_len=(1.0, 4.0),
+                               shadow_strength=0.75, shadow_blur_frac=0.14, shadow_shift_frac=(0.06, 0.12))),
     # ablation ladder of the protocol (section 7, E2), all with --no-applier and --reuse-seed:
     #   A0 flat (generator's NNNNN_flat.png) -> A1 anodized + IBL -> A2 + optics (DoF, CA, black level)
     #   -> A3 + video footprint (bloom, chroma, noise, JPEG, motion blur) = anodized2 without applier
@@ -136,6 +163,7 @@ P = dict(
     unsharp_amount=(0.0, 0.0),       # camera-style edge enhancement inside the clip/applier region (0 = off)
     unsharp_radius=1.2,
     noise_gain=1.0,
+    hdr_k=1.0,                       # >1: two-exposure HDR merge of the rendered layers (see render_layer); 1 = legacy 8-bit
     shadow_strength=0.25, shadow_shift_frac=(0.03, 0.06), shadow_blur_frac=0.10,
     jpeg_prob=1.0, jpeg_quality=(50, 85),
     motion_blur_prob=0.35, motion_blur_len=(1.0, 3.0),
@@ -250,8 +278,8 @@ def make_lights(cam, clip_world, bg_bgr, rng):
                 fill_pos=tuple(clip_world + fill_dir * 100.0), focal=tuple(clip_world))
 
 
-def render_layer(meshes, cam, fovy_deg, env, lights, w, h):
-    """Render a list of (mesh, material) as one RGBA layer (SS x supersampled, transparent bg)."""
+def _render_layer_u8(meshes, cam, fovy_deg, env, lights, w, h):
+    """One 8-bit RGBA screenshot of the (mesh, material) list, SS x supersampled, transparent background."""
     pl = pv.Plotter(off_screen=True, window_size=[w * SS, h * SS])
     for mesh, mat in meshes:
         actor = pl.add_mesh(mesh, pbr=True, color=tuple(float(c) for c in mat["base"]),
@@ -279,6 +307,27 @@ def render_layer(meshes, cam, fovy_deg, env, lights, w, h):
     rgba = pl.screenshot(transparent_background=True, return_img=True)
     pl.close()
     return rgba
+
+
+def render_layer(meshes, cam, fovy_deg, env, lights, w, h):
+    """Render a list of (mesh, material) as one RGBA layer at SS x supersampling, transparent background.
+    Returns float32 (RGB linear premultiplied radiance -- may exceed 1 --, alpha 0..1).
+    The screenshot is 8-bit, i.e. clipped at render time, which is wrong for a camera: real highlights are
+    clipped AFTER the optics, so a blown highlight stays saturated over the whole defocus footprint and
+    blooms, while a clipped-then-blurred one fades. With P['hdr_k'] = K > 1 the layer is rendered a second
+    time at 1/K exposure and the saturated pixels of the full render take K x the dim render (an HDR merge
+    of two exposures, valid up to K x white)."""
+    u8 = _render_layer_u8(meshes, cam, fovy_deg, env, lights, w, h).astype(np.float32) / 255.0
+    rgb = np.power(u8[..., :3], 2.2)
+    a = u8[..., 3]
+    K = float(P.get("hdr_k", 1.0))
+    if K > 1.0:
+        dim_lights = dict(lights, head=lights["head"] / K, fill=lights["fill"] / K)
+        u8d = _render_layer_u8(meshes, cam, fovy_deg, env / K, dim_lights, w, h).astype(np.float32) / 255.0
+        rgb_d = np.power(u8d[..., :3], 2.2) * K
+        sat = (u8[..., :3] >= 0.95).any(-1)[..., None]
+        rgb = np.where(sat, np.maximum(rgb, rgb_d), rgb)
+    return np.concatenate([rgb, a[..., None]], axis=-1).astype(np.float32)
 
 
 def _oriented_box(center, axes, size):
@@ -426,10 +475,9 @@ def chroma_aberration(lay, k, cx, cy):
 
 
 def _layer_linear(rgba_ss, W, H):
-    """Supersampled transparent screenshot -> (premultiplied linear BGR, alpha) at frame size."""
-    rgba = rgba_ss.astype(np.float32) / 255.0
-    lay = cv2.resize(np.ascontiguousarray(np.power(rgba[..., :3][..., ::-1], 2.2)), (W, H), interpolation=cv2.INTER_AREA)
-    a = cv2.resize(np.ascontiguousarray(rgba[..., 3]), (W, H), interpolation=cv2.INTER_AREA)
+    """Supersampled float layer from render_layer -> (premultiplied linear BGR, alpha) at frame size."""
+    lay = cv2.resize(np.ascontiguousarray(rgba_ss[..., :3][..., ::-1]), (W, H), interpolation=cv2.INTER_AREA)
+    a = cv2.resize(np.ascontiguousarray(rgba_ss[..., 3]), (W, H), interpolation=cv2.INTER_AREA)
     return lay, a
 
 
@@ -630,7 +678,7 @@ def _restyle(mesh, src, stem, preset, seed, out_dir=None):
         for bite in P["applier_bites"]:
             amesh, amat, ainfo, spring_w = build_applier(pts, R, cam, meta, rng, bite=bite)
             cand = render_layer([(amesh, amat)], cam, fovy, env, lights, W, H)
-            a1 = cv2.resize(cand[..., 3].astype(np.float32) / 255.0, (W, H), interpolation=cv2.INTER_AREA) > 0.5
+            a1 = cv2.resize(cand[..., 3], (W, H), interpolation=cv2.INTER_AREA) > 0.5
             vis_frac = float((m & ~a1).sum() / max(m.sum(), 1))
             if vis_frac >= P["applier_min_visible"]:
                 rgba_app, app_geom, app_anchor = cand, ainfo, project_point(meta, spring_w)
@@ -641,7 +689,7 @@ def _restyle(mesh, src, stem, preset, seed, out_dir=None):
             for bite in (0.1, 0.0, -0.5):
                 amesh, amat, ainfo, spring_w = build_applier(pts, R, cam, meta, rng, bite=bite, exit_depth=0.9)
                 cand = render_layer([(amesh, amat)], cam, fovy, env, lights, W, H)
-                a1 = cv2.resize(cand[..., 3].astype(np.float32) / 255.0, (W, H), interpolation=cv2.INTER_AREA) > 0.5
+                a1 = cv2.resize(cand[..., 3], (W, H), interpolation=cv2.INTER_AREA) > 0.5
                 if float((m & ~a1).sum() / max(m.sum(), 1)) >= P["applier_min_visible"]:
                     ainfo["shallow"] = True
                     rgba_app, app_geom, app_anchor = cand, ainfo, project_point(meta, spring_w)
