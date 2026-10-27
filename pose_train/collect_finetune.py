@@ -14,7 +14,7 @@ from collections import defaultdict
 import numpy as np
 
 KEYS = [("pck_0_1", "PCK@0.1L"), ("pck_0_2", "PCK@0.2L"), ("mean_frac_med", "err/L med"), ("axis_deg_med", "axis med (deg)"),
-        ("axis_lt_10", "axis<10"), ("axis_lt_20", "axis<20")]
+        ("axis_lt_20", "axis<20"), ("axis_undir_med", "undirected (deg)"), ("flip_rate", "flip rate")]
 
 
 def main():
@@ -40,10 +40,11 @@ def main():
         ms = cfgs[k]
         cells = []
         for key, _ in KEYS:
-            v = np.array([m[key] for m in ms], float)
+            v = np.array([m.get(key, np.nan) for m in ms], float)       # older summaries lack the new keys
             cells.append(f"{v.mean():.3f}" + (f" ± {v.std(ddof=1):.3f}" if len(v) > 1 else ""))
         lines.append(f"| {k[0]} | {k[1]} | {len(ms)} | {ms[0]['n']} | " + " | ".join(cells) + " |")
-    txt = f"Real frames, group '{a.group}' (mean ± sd over seeds; video-grouped cross-validation)\n\n" + "\n".join(lines) + "\n"
+    txt = (f"Real frames, group '{a.group}' ('all' = main set, clip length >= 60 px; mean ± sd over seeds; "
+           f"video-grouped cross-validation)\n\n") + "\n".join(lines) + "\n"
     open(a.out, "w", encoding="utf-8").write(txt)
     print(txt)
 

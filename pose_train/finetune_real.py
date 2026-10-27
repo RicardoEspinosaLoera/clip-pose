@@ -41,7 +41,8 @@ sys.path.insert(0, HERE)
 from dataset import decode_heatmaps, IMAGENET_MEAN, IMAGENET_STD, ClipPoseDataset
 from model import KeypointNet, heatmap_loss
 
-from real_points import KEYS as REAL, SYNTH_MAP, norm_points, crop_window, WINDOW_MARGIN, auto_window
+from real_points import (KEYS as REAL, SYNTH_MAP, norm_points, crop_window, WINDOW_MARGIN, auto_window,
+                         frame_metrics, summarize_real, SUMMARY_HEADER, summary_line, MIN_L_PX)
 ATTRS = ("held", "open", "occluded", "blurry", "multi")
 
 
@@ -181,36 +182,17 @@ def predict(model, ds, device):
 
 
 def frame_row(it, pred, fold):
-    gt = it["pts"]
-    j = 1 if not np.isnan(gt[1, 0]) else 2                    # axis tip -> head (fallback: back)
-    L = float(np.linalg.norm(gt[0] - gt[j])) + 1e-6
-    row = dict(file=it["file"], video=it["video"], fold=fold, L_px=L, **{f"attr_{k}": int(v) for k, v in it["attrs"].items()})
-    fr = []
-    for k, name in enumerate(REAL):
-        if np.isnan(gt[k, 0]):
-            continue
-        e = float(np.linalg.norm(pred[k] - gt[k]))
-        row[f"{name}_px"], row[f"{name}_frac"] = e, e / L
-        fr.append(e / L)
-    row["mean_frac"] = float(np.mean(fr))
-    dp, dg = pred[0] - pred[j], gt[0] - gt[j]
-    c = float(np.dot(dp, dg) / (np.linalg.norm(dp) * np.linalg.norm(dg) + 1e-6))
-    row["axis_deg"] = float(np.degrees(np.arccos(np.clip(c, -1, 1))))
+    """Same metrics as eval_real.py (real_points.frame_metrics): axis/L = tip -> back end, fallback spring centre.
+    (Before 27 Oct 2026 this used tip -> spring centre, so its numbers were not comparable with eval_real.)"""
+    gt = {name: it["pts"][k] for k, name in enumerate(REAL) if not np.isnan(it["pts"][k, 0])}
+    pd_ = {name: pred[k] for k, name in enumerate(REAL)}
+    row = dict(file=it["file"], video=it["video"], fold=fold, **{f"attr_{k}": int(v) for k, v in it["attrs"].items()})
+    row.update(frame_metrics(pd_, gt))
     return row
 
 
 def summarize(rows):
-    def summ(sel, name):
-        v = np.array([r["mean_frac"] for r in sel])
-        ax = np.array([r["axis_deg"] for r in sel])
-        return dict(name=name, n=len(sel), mean_frac_med=float(np.median(v)), mean_frac_p90=float(np.percentile(v, 90)),
-                    pck_0_1=float(np.mean(v < 0.1)), pck_0_2=float(np.mean(v < 0.2)),
-                    tip_frac_med=float(np.median([r["tip_frac"] for r in sel])), head_frac_med=float(np.median([r["head_frac"] for r in sel if "head_frac" in r] or [np.nan])),
-                    axis_deg_med=float(np.median(ax)), axis_lt_10=float(np.mean(ax < 10)), axis_lt_20=float(np.mean(ax < 20)))
-    groups = [(rows, "all")]
-    for k in ATTRS:
-        groups += [([r for r in rows if r.get(f"attr_{k}")], k), ([r for r in rows if not r.get(f"attr_{k}")], f"not_{k}")]
-    return [summ(sel, name) for sel, name in groups if sel]
+    return summarize_real(rows, ATTRS)
 
 
 def main():
@@ -264,10 +246,10 @@ def main():
     json.dump(summary, open(os.path.join(a.out, "summary.json"), "w"), indent=1)
     json.dump(dict(vars(a), n_frames=len(items), folds=[[items[i]["file"] for i in fl] for fl in folds]),
               open(os.path.join(a.out, "config.json"), "w"), indent=1)
-    print(f"{'group':12s} {'n':>4s} {'err/L':>6s} {'PCK.1':>6s} {'PCK.2':>6s} {'tip/L':>6s} {'head/L':>6s} {'axis':>6s} {'<10':>5s} {'<20':>5s}")
+    print(f"main set = frames with clip length L >= {MIN_L_PX:.0f} px ('all')")
+    print(SUMMARY_HEADER)
     for m in summary:
-        print(f"{m['name']:12s} {m['n']:4d} {m['mean_frac_med']:6.3f} {m['pck_0_1']:6.2f} {m['pck_0_2']:6.2f} {m['tip_frac_med']:6.3f} "
-              f"{m['head_frac_med']:6.3f} {m['axis_deg_med']:6.1f} {m['axis_lt_10']:5.2f} {m['axis_lt_20']:5.2f}")
+        print(summary_line(m))
     print("->", a.out)
 
 

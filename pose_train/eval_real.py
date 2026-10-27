@@ -8,8 +8,10 @@ points (tip = mean of tip_a/tip_b, spring, coil_centre).
 
 Metrics per frame, normalised by the annotated clip length L = |tip - spring|:
   * point error for tip / spring / coil (px and fraction of L), PCK at 0.1 L and 0.2 L
-  * axis error: angle between predicted and annotated spring->tip directions (deg)
-Reported overall and per attribute. Writes per_frame.csv, summary.json and an overlay montage.
+  * axis error: angle between predicted and annotated back->tip directions (deg), its undirected version and
+    the tip/back flip rate
+Group "all" = main set (L >= 60 px); end-on / tiny clips are reported as "small" and "all_incl_small"
+(see real_points.MIN_L_PX). Reported overall and per attribute. Writes per_frame.csv, summary.json and an overlay montage.
 
 Usage: python eval_real.py --ann ../real_eval/annotations/ricardo --ckpt runs/e0_m1_s0/best.pt --out runs/e0_m1_s0/real
 """
@@ -29,7 +31,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from dataset import ClipModel, decode_heatmaps, IMAGENET_MEAN, IMAGENET_STD
 from model import KeypointNet
-from real_points import KEYS, SYNTH_MAP, norm_points, axis_key, crop_window, WINDOW_MARGIN, auto_window
+from real_points import (KEYS, SYNTH_MAP, norm_points, axis_key, crop_window, WINDOW_MARGIN, auto_window,
+                         frame_metrics, summarize_real, SUMMARY_HEADER, summary_line, MIN_L_PX)
 
 
 def main():
@@ -78,18 +81,8 @@ def main():
         kp = {n: po[i] for i, n in enumerate(names)}
         pred = {k: np.mean([kp[n] for n in SYNTH_MAP[k]], 0) for k in KEYS}
         gt = {k: np.array(v, float) for k, v in norm_points(ann["points"]).items() if v is not None}   # back may be hidden
-        ak = axis_key(gt)
-        L = float(np.linalg.norm(gt["tip"] - gt[ak])) + 1e-6
-        row = dict(file=ann["file"], video=ann.get("video", ""), L_px=L, **{f"attr_{k}": int(v) for k, v in ann["attrs"].items()})
-        for k in KEYS:
-            if k not in gt:
-                continue
-            e = float(np.linalg.norm(pred[k] - gt[k]))
-            row[f"{k}_px"], row[f"{k}_frac"] = e, e / L
-        dp, dg = pred["tip"] - pred[ak], gt["tip"] - gt[ak]
-        cosang = float(np.dot(dp, dg) / (np.linalg.norm(dp) * np.linalg.norm(dg) + 1e-6))
-        row["axis_deg"] = float(np.degrees(np.arccos(np.clip(cosang, -1, 1))))
-        row["mean_frac"] = float(np.mean([row[f"{k}_frac"] for k in KEYS if f"{k}_frac" in row]))
+        row = dict(file=ann["file"], video=ann.get("video", ""), **{f"attr_{k}": int(v) for k, v in ann["attrs"].items()})
+        row.update(frame_metrics(pred, gt))
         rows.append(row)
         if len(cells) < a.n_montage:
             vis = img.copy()
@@ -114,21 +107,12 @@ def main():
         w.writeheader()
         w.writerows(rows)
 
-    def summ(sel, name):
-        v = np.array([r["mean_frac"] for r in sel])
-        ax = np.array([r["axis_deg"] for r in sel])
-        return dict(name=name, n=len(sel), mean_frac_med=float(np.median(v)), mean_frac_p90=float(np.percentile(v, 90)),
-                    pck_0_1=float(np.mean(v < 0.1)), pck_0_2=float(np.mean(v < 0.2)),
-                    tip_frac_med=float(np.median([r["tip_frac"] for r in sel])), head_frac_med=float(np.median([r["head_frac"] for r in sel if "head_frac" in r] or [np.nan])),
-                    axis_deg_med=float(np.median(ax)), axis_lt_10=float(np.mean(ax < 10)))
-    groups = [(rows, "all")]
-    for k in ("held", "open", "occluded", "blurry", "multi"):
-        groups += [([r for r in rows if r.get(f"attr_{k}")], k), ([r for r in rows if not r.get(f"attr_{k}")], f"not_{k}")]
-    summary = [summ(sel, name) for sel, name in groups if sel]
+    summary = summarize_real(rows)
     json.dump(summary, open(os.path.join(a.out, "summary.json"), "w"), indent=1)
-    print(f"{'group':12s} {'n':>4s} {'err/L med':>10s} {'p90':>6s} {'PCK.1':>6s} {'PCK.2':>6s} {'tip/L':>6s} {'head/L':>6s} {'axis':>6s} {'<10deg':>6s}")
+    print(f"main set = frames with clip length L >= {MIN_L_PX:.0f} px ('all'); axis = directed, undir = line only, flip = tip/back swapped")
+    print(SUMMARY_HEADER)
     for m in summary:
-        print(f"{m['name']:12s} {m['n']:4d} {m['mean_frac_med']:10.3f} {m['mean_frac_p90']:6.3f} {m['pck_0_1']:6.2f} {m['pck_0_2']:6.2f} {m['tip_frac_med']:6.3f} {m['head_frac_med']:6.3f} {m['axis_deg_med']:6.1f} {m['axis_lt_10']:6.2f}")
+        print(summary_line(m))
     if cells:
         while len(cells) % 5:
             cells.append(np.zeros_like(cells[0]))

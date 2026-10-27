@@ -39,14 +39,16 @@ def main():
             for m in json.load(open(real_p)):
                 if m["name"] == "all":
                     row.update(real_n=m["n"], real_err_L=m["mean_frac_med"], real_pck01=m["pck_0_1"], real_pck02=m["pck_0_2"],
-                               real_axis_deg=m["axis_deg_med"], real_axis_lt_10=m["axis_lt_10"])
+                               real_axis_deg=m["axis_deg_med"], real_axis_lt_10=m["axis_lt_10"],
+                               real_undir=m.get("axis_undir_med"), real_flip=m.get("flip_rate"))
                 sub_rows.append(dict(run=name, split="real", **m))
         rows.append(row)
     if not rows:
         print("no runs in", a.runs)
         return
     cols = ["run", "model", "n_train", "iters", "seed", "suffix", "data", "pnp_ok", "kp_px", "rot_deg", "rot_p90", "trans", "depth",
-            "add_s", "add_s_lt_01", "rot_lt_5", "reproj_px", "real_n", "real_err_L", "real_pck01", "real_pck02", "real_axis_deg", "real_axis_lt_10"]
+            "add_s", "add_s_lt_01", "rot_lt_5", "reproj_px", "real_n", "real_err_L", "real_pck01", "real_pck02", "real_axis_deg", "real_axis_lt_10",
+            "real_undir", "real_flip"]
 
     def fmt(v):
         if v is None or v == "":
