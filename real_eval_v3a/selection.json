@@ -1,0 +1,36 @@
+{
+ "criteria": {
+  "shape": "straight",
+  "not_in": "real_eval_v2",
+  "hamming": 4,
+  "gaps": [
+   15,
+   8,
+   5
+  ],
+  "round_robin_by_video": true
+ },
+ "candidates": 487,
+ "near_duplicates_removed": 94,
+ "selected": 197,
+ "by_gap_pass": {
+  "5": 52,
+  "8": 26,
+  "15": 119
+ },
+ "per_video": {
+  "vid_00": 7,
+  "vid_02": 4,
+  "vid_05": 8,
+  "vid_06": 24,
+  "vid_07": 4,
+  "vid_08": 31,
+  "vid_09": 5,
+  "vid_11": 18,
+  "vid_12": 8,
+  "vid_13": 3,
+  "vid_15": 14,
+  "vid_17": 22,
+  "vid_19": 49
+ }
+}
