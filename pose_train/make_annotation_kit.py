@@ -19,10 +19,11 @@ REF_IMG = os.path.join(ROOT, "GT_Generator", "_keypoints_check.jpg")
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default=os.path.join(os.path.expanduser("~"), "realac_bundle"))
-    ap.add_argument("--set", default=os.path.join(ROOT, "real_eval"), help="frame set to ship (real_eval or real_eval_v2)")
+    ap.add_argument("--set", default=os.path.join(ROOT, "real_eval"), help="frame set to ship (real_eval, real_eval_v2, real_eval_v3a, ...)")
+    ap.add_argument("--tag", default="", help="suffix of the kit name, e.g. A / B when several students get different frames")
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
-    name = f"kit_anotacion_clips_{time.strftime('%Y%m%d')}"
+    name = f"kit_anotacion_clips_{time.strftime('%Y%m%d')}" + (f"_{a.tag}" if a.tag else "")
     zp = os.path.join(a.out, name + ".zip")
     frames_dir = os.path.join(a.set, "frames")
     frames = sorted(f for f in os.listdir(frames_dir) if f.lower().endswith(".jpg"))

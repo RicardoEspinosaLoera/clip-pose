@@ -6,3 +6,9 @@ Anotacion de clips de aneurisma (proyecto clip-pose)
 
 Requisito: Python 3.9 o mas reciente. La primera vez se instalan opencv-python y numpy (unos 40 MB).
 Anota de forma independiente: no compares con otros anotadores hasta entregar.
+
+Excluye el frame con la tecla e si:
+  - no hay clip, o el clip esta curvo o doblado;
+  - el clip se ve de punta (la punta y el extremo trasero quedan casi encimados, sin largo visible);
+  - no puedes ubicar la punta ni el extremo trasero.
+Excluir no es un error: es mejor que adivinar.
